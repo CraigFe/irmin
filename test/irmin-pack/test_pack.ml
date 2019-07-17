@@ -104,7 +104,7 @@ module H = Irmin.Hash.SHA1
 module I = Irmin_pack.Index.Make (H)
 module P = Irmin_pack.Pack.File (I) (H)
 module Pack = P.Make (S)
-module Index = Irmin_pack.Pack_index.Make (Irmin.Hash.SHA1)
+module Index = Irmin_pack.Index.Make (Irmin.Hash.SHA1)
 
 let test_pack _switch () =
   let root = Filename.dirname test_file in
