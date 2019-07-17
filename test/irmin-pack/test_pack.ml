@@ -109,7 +109,7 @@ module Index = Irmin_pack.Index.Make (Irmin.Hash.SHA1)
 let test_pack _switch () =
   let root = Filename.dirname test_file in
   let index =
-    Index.v ~fresh:true ~read_only:false ~log_size:10_000_000 ~fan_out_size:64
+    Index.v ~fresh:true ~readonly:false ~log_size:10_000_000 ~fan_out_size:64
       root
   in
   Pack.v ~fresh:true ~lru_size:0 ~index test_file >>= fun t ->
@@ -142,11 +142,14 @@ let test_pack _switch () =
 let test_readonly_pack _switch () =
   let root = Filename.dirname test_file in
   let index =
-    Index.v ~fresh:true ~read_only:true ~log_size:0 ~fan_out_size:64 root
+    Index.v ~fresh:true ~readonly:true ~log_size:0 ~fan_out_size:64 root
   in
   Pack.v ~fresh:true ~index test_file >>= fun w ->
-  Pack.v ~fresh:false ~shared:false ~readonly:true ~index test_file
-  >>= fun r ->
+  let index =
+    Index.v ~fresh:false ~readonly:true ~log_size:10_000_000 ~fan_out_size:64
+      root
+  in
+  Pack.v ~fresh:false ~readonly:true ~index test_file >>= fun r ->
   let adds l = List.iter (fun (k, v) -> Pack.unsafe_append w k v) l in
   let x1 = "foo" in
   let x2 = "bar" in
