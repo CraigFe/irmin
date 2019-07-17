@@ -308,7 +308,7 @@ struct
     end
 
     module Node = struct
-      module CA = Inode.Make (Config) (Pack) (H) (Node)
+      module CA = Inode.Make (Config) (H) (Pack) (Node)
       include Irmin.Private.Node.Store (Contents) (P) (M) (CA)
     end
 
@@ -384,13 +384,15 @@ struct
         let readonly = readonly config in
         let shared = shared config in
         let index =
-          Index.v ~fresh ~shared ~readonly ~log_size:10_000_000
+          Index.v ~fresh ~read_only:readonly ~log_size:10_000_000
             ~fan_out_size:64 root
         in
-        Contents.CA.v ~fresh ~shared ~readonly ~lru_size root
+        Contents.CA.v ~fresh ~shared ~readonly ~lru_size ~index root
         >>= fun contents ->
-        Node.CA.v ~fresh ~shared ~readonly ~lru_size root >>= fun node ->
-        Commit.CA.v ~fresh ~shared ~readonly ~lru_size root >>= fun commit ->
+        Node.CA.v ~fresh ~shared ~readonly ~lru_size ~index root
+        >>= fun node ->
+        Commit.CA.v ~fresh ~shared ~readonly ~lru_size ~index root
+        >>= fun commit ->
         Branch.v ~fresh ~shared ~readonly root >|= fun branch ->
         { contents; node; commit; branch; config; index }
     end
