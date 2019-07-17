@@ -106,12 +106,11 @@ module P = Irmin_pack.Pack.File (I) (H)
 module Pack = P.Make (S)
 module Index = Irmin_pack.Index.Make (Irmin.Hash.SHA1)
 
+let get_index = Index.v ~log_size:10_000_000 ~fan_out_size:16
+
 let test_pack _switch () =
   let root = Filename.dirname test_file in
-  let index =
-    Index.v ~fresh:true ~readonly:false ~log_size:10_000_000 ~fan_out_size:64
-      root
-  in
+  let index = get_index ~fresh:true root in
   Pack.v ~fresh:true ~lru_size:0 ~index test_file >>= fun t ->
   let x1 = "foo" in
   let x2 = "bar" in
@@ -141,14 +140,9 @@ let test_pack _switch () =
 
 let test_readonly_pack _switch () =
   let root = Filename.dirname test_file in
-  let index =
-    Index.v ~fresh:true ~readonly:true ~log_size:0 ~fan_out_size:64 root
-  in
-  Pack.v ~fresh:true ~index test_file >>= fun w ->
-  let index =
-    Index.v ~fresh:false ~readonly:true ~log_size:10_000_000 ~fan_out_size:64
-      root
-  in
+  let index = get_index ~fresh:true ~readonly:true root in
+  Pack.v ~fresh:true ~readonly:true ~index test_file >>= fun w ->
+  let index = get_index ~fresh:false ~readonly:true root in
   Pack.v ~fresh:false ~readonly:true ~index test_file >>= fun r ->
   let adds l = List.iter (fun (k, v) -> Pack.unsafe_append w k v) l in
   let x1 = "foo" in
