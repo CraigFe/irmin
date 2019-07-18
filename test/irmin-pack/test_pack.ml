@@ -140,10 +140,11 @@ let test_pack _switch () =
 
 let test_readonly_pack _switch () =
   let root = Filename.dirname test_file in
-  let index = get_index ~fresh:true ~readonly:true root in
-  Pack.v ~fresh:true ~readonly:true ~index test_file >>= fun w ->
-  let index = get_index ~fresh:false ~readonly:true root in
-  Pack.v ~fresh:false ~readonly:true ~index test_file >>= fun r ->
+  let index = get_index ~fresh:true root in
+  Pack.v ~fresh:true ~index test_file >>= fun w ->
+  let index = get_index ~fresh:false ~shared:false ~readonly:true root in
+  Pack.v ~fresh:false ~shared:false ~readonly:true ~index test_file
+  >>= fun r ->
   let adds l = List.iter (fun (k, v) -> Pack.unsafe_append w k v) l in
   let x1 = "foo" in
   let x2 = "bar" in
