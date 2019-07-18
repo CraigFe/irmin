@@ -194,7 +194,10 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Hash.S) = struct
     (aux [@tailcall]) 0L @@ fun () ->
     { cache; index; block; w = watches; lock = Lwt_mutex.create () }
 
-  let unsafe_v = with_cache ~clear:unsafe_clear ~v:unsafe_v "store.branches"
+  let unsafe_v =
+    with_cache ~clear:unsafe_clear
+      ~v:(fun ~aux:() -> unsafe_v)
+      "store.branches" ~aux:()
 
   let v ?fresh ?shared ?readonly file =
     Lwt_mutex.with_lock create (fun () ->

@@ -140,7 +140,7 @@ struct
     Index.clear t.index;
     Dict.clear t.dict
 
-  let unsafe_v ~fresh ~shared:_ ~readonly ~index file =
+  let unsafe_v ~aux ~fresh ~shared:_ ~readonly file =
     let root = Filename.dirname file in
     let lock = Lwt_mutex.create () in
     let dict = Dict.v ~fresh ~readonly root in
@@ -148,9 +148,9 @@ struct
     if IO.version block <> current_version then
       Fmt.failwith "invalid version: got %S, expecting %S" (IO.version block)
         current_version;
-    { block; index; lock; dict }
+    { block; index = aux; lock; dict }
 
-  let v ~index = with_cache ~clear ~v:(unsafe_v ~index) "store.pack"
+  let v = with_cache ~clear ~v:unsafe_v "store.pack"
 
   type key = K.t
 
@@ -178,7 +178,7 @@ struct
     let create = Lwt_mutex.create ()
 
     let unsafe_v_no_cache ~fresh ~readonly ~shared ~lru_size ~index root =
-      let pack = v ~fresh ~shared ~readonly ~index root in
+      let pack = v ~aux:index ~fresh ~shared ~readonly root in
       let staging = Tbl.create 127 in
       let lru = Lru.create lru_size in
       { staging; lru; pack }

@@ -45,9 +45,10 @@ end
 module Unix : S
 
 val with_cache :
-  v:(fresh:bool -> shared:bool -> readonly:bool -> string -> 'a) ->
+  v:(aux:'b -> fresh:bool -> shared:bool -> readonly:bool -> string -> 'a) ->
   clear:('a -> unit) ->
   string ->
+  aux:'b ->
   ?fresh:bool ->
   ?shared:bool ->
   ?readonly:bool ->

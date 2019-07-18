@@ -257,14 +257,14 @@ let ( // ) = Filename.concat
 
 let with_cache ~v ~clear file =
   let files = Hashtbl.create 13 in
-  fun ?(fresh = false) ?(shared = true) ?(readonly = false) root ->
+  fun ~aux ?(fresh = false) ?(shared = true) ?(readonly = false) root ->
     let file = root // file in
     if fresh && readonly then raise RO_Not_Allowed;
     if not shared then (
       Log.debug (fun l ->
           l "[%s] v fresh=%b shared=%b readonly=%b" (Filename.basename file)
             fresh shared readonly );
-      let t = v ~fresh ~shared ~readonly file in
+      let t = v ~aux ~fresh ~shared ~readonly file in
       if fresh then clear t;
       t )
     else
@@ -283,7 +283,7 @@ let with_cache ~v ~clear file =
         Log.debug (fun l ->
             l "[%s] v fresh=%b shared=%b readonly=%b" (Filename.basename file)
               fresh shared readonly );
-        let t = v ~fresh ~shared ~readonly file in
+        let t = v ~aux ~fresh ~shared ~readonly file in
         if fresh then clear t;
         Hashtbl.add files file t;
         t
