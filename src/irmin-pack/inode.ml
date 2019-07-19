@@ -51,12 +51,10 @@ end
 module Make
     (Conf : CONFIG)
     (H : Irmin.Hash.S)
-    (Pack : Pack.MAKER
-            with type key = H.t
-             and type index = Pack_index.Make(H).t)
+    (Pack : Pack.MAKER with type key = H.t)
     (Node : Irmin.Private.Node.S with type hash = H.t) =
 struct
-  type index = Pack_index.Make(H).t
+  type index = Pack.index
 
   module Node = struct
     include Node
