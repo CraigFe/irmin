@@ -57,6 +57,8 @@ module Make_ext
      and type Key.step = Path.step
 
   val integrity_check : repo -> unit
+
+  val statistics : repo -> unit Lwt.t
 end
 
 module Make
@@ -76,6 +78,8 @@ module Make
      and type hash = H.t
 
   val integrity_check : repo -> unit
+
+  val statistics : repo -> unit Lwt.t
 end
 
 module KV (Config : CONFIG) : Irmin.KV_MAKER

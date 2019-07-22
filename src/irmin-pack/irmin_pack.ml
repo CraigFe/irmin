@@ -448,6 +448,11 @@ struct
     pr_stats ()
 
   include Irmin.Of_private (X)
+
+  let statistics (t : X.Repo.t) =
+    Repo.heads t >>= fun l ->
+    Printf.printf "The length of the list is %d\n%!" (List.length l);
+    Lwt.return_unit
 end
 
 module Hash = Irmin.Hash.BLAKE2B
