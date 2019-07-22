@@ -22,7 +22,7 @@ val index : t -> string -> int
 
 val sync : t -> unit
 
-val v : ?fresh:bool -> ?shared:bool -> ?readonly:bool -> string -> t
+val v : fresh:bool -> shared:bool -> readonly:bool -> string -> t
 
 val clear : t -> unit
 

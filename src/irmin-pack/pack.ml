@@ -140,10 +140,10 @@ struct
     Index.clear t.index;
     Dict.clear t.dict
 
-  let unsafe_v ~index ~fresh ~shared:_ ~readonly file =
+  let unsafe_v ~index ~fresh ~shared ~readonly file =
     let root = Filename.dirname file in
     let lock = Lwt_mutex.create () in
-    let dict = Dict.v ~fresh ~readonly root in
+    let dict = Dict.v ~fresh ~shared ~readonly root in
     let block = IO.v ~fresh ~version:current_version ~readonly file in
     if IO.version block <> current_version then
       Fmt.failwith "invalid version: got %S, expecting %S" (IO.version block)

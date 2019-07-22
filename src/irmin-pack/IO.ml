@@ -257,8 +257,7 @@ let ( // ) = Filename.concat
 
 let with_cache ~v ~clear file =
   let files = Hashtbl.create 13 in
-  let cached_constructor extra_args ?(fresh = false) ?(shared = true)
-      ?(readonly = false) root =
+  let cached_constructor extra_args ~fresh ~shared ~readonly root =
     let file = root // file in
     if fresh && readonly then raise RO_Not_Allowed;
     if not shared then (

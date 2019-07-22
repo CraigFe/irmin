@@ -197,7 +197,7 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Hash.S) = struct
   let (`Staged unsafe_v) =
     with_cache ~clear:unsafe_clear ~v:(fun () -> unsafe_v) "store.branches"
 
-  let v ?fresh ?shared ?readonly file =
+  let v ~fresh ~shared ~readonly file =
     Lwt_mutex.with_lock create (fun () ->
         let v = unsafe_v () ?fresh ?shared ?readonly file in
         Lwt.return v )
