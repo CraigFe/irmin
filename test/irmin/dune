@@ -1,4 +1,14 @@
-(test
- (name      test)
- (package   irmin)
+(library
+ (name      test_core)
+ (modules   test_core)
  (libraries digestif.c irmin alcotest hex))
+
+(executable
+ (name      test)
+ (modules   test)
+ (libraries test_core))
+
+(alias
+ (name    runtest)
+ (package irmin)
+ (action  (run ./test.exe -q --color=always)))

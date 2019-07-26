@@ -22,7 +22,7 @@ let socket = Filename.get_temp_dir_name () / "irmin.sock"
 
 let uri = Uri.of_string "http://irmin"
 
-let pid_file = Filename.get_temp_dir_name () / "irmin-test.pid"
+let pid_file = Filename.get_temp_dir_name () / "irmin-http-test.pid"
 
 let rewrite _ _ = Lwt.return (`Unix_domain_socket socket)
 
@@ -68,7 +68,8 @@ let rec wait_for_the_server_to_start () =
     Lwt.return pid )
   else (
     Logs.debug (fun l -> l "waiting for the server to start...");
-    Lwt_unix.sleep 0.1 >>= fun () -> wait_for_the_server_to_start () )
+    Lwt_unix.sleep 0.1 >>= fun () ->
+    wait_for_the_server_to_start () )
 
 let servers = [ (`Quick, Test_mem.suite); (`Quick, Test_git.suite) ]
 
@@ -81,7 +82,7 @@ let serve servers n =
   Logs.debug (fun l ->
       l "Got server: %s, root=%a" server.name
         Fmt.(option string)
-        (root server.config) );
+        (root server.config));
   let (module Server : Irmin_test.S) = server.store in
   let module HTTP = Irmin_http.Server (Cohttp_lwt_unix.Server) (Server) in
   let server () =
@@ -102,34 +103,37 @@ let serve servers n =
 let suite i server =
   let open Irmin_test in
   let server_pid = ref 0 in
-  { name = Printf.sprintf "HTTP.%s" server.name;
-    init =
-      (fun () ->
-        remove pid_file;
-        Lwt_io.flush_all () >>= fun () ->
-        let pwd = Sys.getcwd () in
-        let chdir =
-          if Filename.basename pwd = "default" then "cd ../.. && " else ""
-        in
-        let cmd =
-          Fmt.strf "%s_build/default/%s serve %d &" chdir Sys.argv.(0) i
-        in
-        Fmt.epr "pwd=%s\nExecuting: %S\n%!" pwd cmd;
-        let _ = Sys.command cmd in
-        wait_for_the_server_to_start () >|= fun pid -> server_pid := pid );
+  let init () =
+    remove pid_file;
+    Lwt_io.flush_all () >>= fun () ->
+    let pwd = Sys.getcwd () in
+    let chdir =
+      if Filename.basename pwd = "default" then "cd ../.. && " else ""
+    in
+    let cmd = Fmt.strf "%s_build/default/%s serve %d &" chdir Sys.argv.(0) i in
+    Fmt.epr "pwd=%s\nExecuting: %S\n%!" pwd cmd;
+    let _ = Sys.command cmd in
+    wait_for_the_server_to_start () >|= fun pid ->
+    server_pid := pid
+  in
+  let clean () =
+    Lwt.return
+      ( try Unix.kill !server_pid Sys.sigkill
+        with Unix.Unix_error (Unix.ESRCH, _, _) -> () )
+    >>= fun () ->
+    let () =
+      try ignore @@ Unix.waitpid [ Unix.WUNTRACED ] !server_pid
+      with Unix.Unix_error (Unix.ECHILD, _, _) -> ()
+    in
+    server.clean ()
+  in
+  {
+    name = Printf.sprintf "HTTP.%s" server.name;
+    init;
     stats = None;
-    clean =
-      (fun () ->
-        try
-          Unix.kill !server_pid Sys.sigkill;
-          let () =
-            try ignore (Unix.waitpid [ Unix.WUNTRACED ] !server_pid)
-            with _ -> ()
-          in
-          server.clean ()
-        with Unix.Unix_error (Unix.ESRCH, _, _) -> Lwt.return_unit );
+    clean;
     config = Irmin_http.config uri;
-    store = http_store server.store
+    store = http_store server.store;
   }
 
 let suites servers =
@@ -145,3 +149,5 @@ let with_server servers f =
     Logs.set_reporter (Irmin_test.reporter ~prefix:"S" ());
     serve servers n )
   else f ()
+
+let tests = Irmin_test.Store.tests @@ suites servers

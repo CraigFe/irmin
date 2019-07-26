@@ -19,7 +19,9 @@ module IO = Irmin_fs.IO_mem
 
 let test_db = Filename.concat "_build" "test-db"
 
-let init () = IO.clear () >|= fun () -> IO.set_listen_hook ()
+let init () =
+  IO.clear () >|= fun () ->
+  IO.set_listen_hook ()
 
 let config = Irmin_fs.config test_db
 
@@ -31,3 +33,5 @@ let store =
   Irmin_test.store (module Irmin_fs.Make (IO)) (module Irmin.Metadata.None)
 
 let suite = { Irmin_test.name = "FS"; init; clean; config; store; stats }
+
+let tests = Irmin_test.Store.tests [ (`Quick, suite) ]

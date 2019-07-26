@@ -14,4 +14,4 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-let () = Irmin_test.Store.run "irmin" ~misc:[] [ (`Quick, Test_mem.suite) ]
+let () = Alcotest.run "irmin" Test_mem.tests

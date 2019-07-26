@@ -19,3 +19,5 @@ end
 val misc : (module G) -> unit Alcotest.test_case list
 
 val mem : (module G)
+
+val tests : unit Alcotest.test list

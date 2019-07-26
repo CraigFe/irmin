@@ -31,3 +31,5 @@ let init () = Lwt.return_unit
 let stats = None
 
 let suite = { Irmin_test.name = "MEM"; init; clean; config; store; stats }
+
+let tests = Irmin_test.Store.tests [ (`Quick, suite) ]

@@ -1,0 +1,4 @@
+(executable
+ (name    debug)
+ (modules debug)
+ (libraries irmin test_core test_chunk test_fs test_git test_http test_mem test_pack test_unix))

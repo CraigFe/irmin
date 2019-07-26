@@ -127,7 +127,7 @@ let test_pack _switch () =
   Pack.batch t (fun w ->
       Lwt_list.iter_s
         (fun (k, v) -> Pack.unsafe_add w k v)
-        [ (h1, x1); (h2, x2); (h3, x3); (h4, x4) ] )
+        [ (h1, x1); (h2, x2); (h3, x3); (h4, x4) ])
   >>= fun () ->
   let test t =
     Pack.find t h1 >|= get >>= fun y1 ->
@@ -140,7 +140,8 @@ let test_pack _switch () =
     Alcotest.(check string) "x4" x4 y4;
     Lwt.return ()
   in
-  test t >>= fun () -> Pack.v ~fresh:false ~index test_file >>= test
+  test t >>= fun () ->
+  Pack.v ~fresh:false ~index test_file >>= test
 
 let test_readonly_pack _switch () =
   let root = Filename.dirname test_file in
@@ -252,3 +253,5 @@ let misc =
       Alcotest_lwt.test_case "RO pack" `Quick test_readonly_pack;
       Alcotest_lwt.test_case "branch" `Quick test_branch
     ] )
+
+let tests = Irmin_test.Store.tests [ (`Quick, suite) ] @ [ misc ]

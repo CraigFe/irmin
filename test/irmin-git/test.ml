@@ -14,8 +14,4 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-let misc = [ ("misc", Test_git.(misc mem)) ]
-
-let () =
-  Irmin_test.Store.run "irmin-git" ~misc
-    [ (`Quick, Test_git.suite); (`Quick, Test_git.suite_generic) ]
+let () = Alcotest.run "irmin-git" Test_git.tests
