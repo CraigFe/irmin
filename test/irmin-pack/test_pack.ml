@@ -172,7 +172,7 @@ let test_readonly_pack _switch () =
 let test_readonly_dict () =
   let ignore_int (_ : int option) = () in
   let w = Dict.v ~fresh:true test_dir in
-  let r = Dict.v ~fresh:false ~shared:false ~readonly:true test_dir in
+  let r = Dict.v ~fresh:false ~readonly:true test_dir in
   let check_index k i =
     Alcotest.(check (option int)) k (Some i) (Dict.index r k)
   in
