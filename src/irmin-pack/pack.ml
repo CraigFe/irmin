@@ -121,12 +121,13 @@ end)
 
 let with_cache = IO.with_cache
 
-module IO = IO.Unix
-
-module File (Index : Pack_index.S) (K : Irmin.Hash.S with type t = Index.key) =
+module File
+    (IO : IO.S)
+    (Dict : Dict.S)
+    (Index : Pack_index.S)
+    (K : Irmin.Hash.S with type t = Index.key) =
 struct
   module Tbl = Table (K)
-  module Dict = Pack_dict
 
   type index = Index.t
 

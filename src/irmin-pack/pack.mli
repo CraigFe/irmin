@@ -72,7 +72,11 @@ module type MAKER = sig
     S with type key = key and type value = V.t and type index = index
 end
 
-module File (Index : Pack_index.S) (K : Irmin.Hash.S with type t = Index.key) :
+module File
+    (IO : IO.S)
+    (Dict : Dict.S with type io := IO.t)
+    (Index : Pack_index.S)
+    (K : Irmin.Hash.S with type t = Index.key) :
   MAKER with type key = K.t and type index = Index.t
 
 type stats = {

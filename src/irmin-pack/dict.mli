@@ -17,6 +17,8 @@
 module type S = sig
   type t
 
+  type io
+
   val find : t -> int -> string option
 
   val index : t -> string -> int option

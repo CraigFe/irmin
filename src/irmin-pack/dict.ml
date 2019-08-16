@@ -26,6 +26,8 @@ let ( -- ) = Int64.sub
 module type S = sig
   type t
 
+  type io
+
   val find : t -> int -> string option
 
   val index : t -> string -> int option
@@ -44,6 +46,8 @@ module Make (IO : IO.S) : S = struct
     index : (int, string) Hashtbl.t;
     io : IO.t;
   }
+
+  type io = IO.t
 
   let append_string t v =
     let len = Int32.of_int (String.length v) in
