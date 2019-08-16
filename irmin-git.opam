@@ -16,11 +16,11 @@ build: [
 depends: [
   "ocaml"      {>= "4.02.3"}
   "dune"       {>= "1.1.0"}
-  "irmin"      {= version}
+  "irmin"      {>= "1.4.0"}
   "git"        {>= "2.1.0"}
   "digestif"   {>= "0.7.3"}
-  "irmin-test" {with-test & =version}
-  "irmin-mem"  {with-test & =version}
+  "irmin-test" {with-test & >= "1.4.0"}
+  "irmin-mem"  {with-test & >= "1.4.0"}
   "git-unix"   {with-test & >= "2.1.0"}
   "mtime"      {with-test & >= "1.0.0"}
 ]

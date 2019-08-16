@@ -16,10 +16,10 @@ depends: [
   "ocaml"      {>= "4.02.3"}
   "dune"       {>= "1.1.0"}
   "bloomf"
-  "irmin"      {=version}
+  "irmin"      {>= "1.4.0"}
   "index"
   "lwt"
-  "irmin-test" {with-test & =version}
+  "irmin-test" {with-test & >= "1.4.0"}
   "alcotest-lwt" {with-test}
 ]
 
