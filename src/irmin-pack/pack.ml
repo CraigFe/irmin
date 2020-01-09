@@ -316,6 +316,13 @@ struct
       else Dict.sync t.pack.dict;
       Index.sync t.pack.index
 
+    let copy_entry ~offset ~length k t1 t2 =
+      Log.debug (fun l ->
+          l "read from [%s] at off %Ld length %d " (IO.name t1.pack.block)
+            offset length);
+      let v = io_read_and_decode ~off:offset ~len:length t1 in
+      unsafe_append t2 k v
+
     let version t = IO.version t.pack.block
   end
 end

@@ -50,6 +50,10 @@ module type S = sig
   val flush : t -> unit
 
   val close : t -> unit
+
+  val rename_dir : src:string -> dst:string -> unit
+
+  val tmp_dir : string -> string
 end
 
 module Unix : S

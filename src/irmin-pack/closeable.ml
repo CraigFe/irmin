@@ -90,6 +90,11 @@ module Content_addressable (S : Pack.S) = struct
   let version t =
     check_not_closed t;
     S.version t.t
+
+  let copy_entry ~offset ~length k t1 t2 =
+    check_not_closed t1;
+    check_not_closed t2;
+    S.copy_entry ~offset ~length k t1.t t2.t
 end
 
 module Atomic_write (AW : S.ATOMIC_WRITE_STORE) = struct
@@ -147,4 +152,12 @@ module Atomic_write (AW : S.ATOMIC_WRITE_STORE) = struct
     else (
       t.closed := true;
       AW.close t.t)
+
+  let clear t =
+    check_not_closed t;
+    AW.clear t.t
+
+  let iter t =
+    check_not_closed t;
+    AW.iter t.t
 end

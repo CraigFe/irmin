@@ -66,6 +66,10 @@ module type S = sig
   val flush : t -> unit
 
   val close : t -> unit
+
+  val rename_dir : src:string -> dst:string -> unit
+
+  val tmp_dir : string -> string
 end
 
 let ( ++ ) = Int64.add
@@ -103,6 +107,7 @@ module Unix : S = struct
       Buffer.clear t.buf;
       Raw.unsafe_write t.raw ~off:t.flushed buf;
       Raw.Offset.set t.raw offset;
+
       (* concurrent append might happen so here t.offset might differ
          from offset *)
       let h = header t.version in
@@ -133,9 +138,11 @@ module Unix : S = struct
       off <= t.flushed)
 
   let read t ~off buf =
-    let off = header t.version ++ off in
-    assert (if not t.readonly then off <= t.flushed else true);
-    Raw.unsafe_read t.raw ~off ~len:(Bytes.length buf) buf
+    assert (
+      if not t.readonly then header t.version ++ off <= t.flushed else true);
+    Raw.unsafe_read t.raw
+      ~off:(header t.version ++ off)
+      ~len:(Bytes.length buf) buf
 
   let offset t = t.offset
 
@@ -149,7 +156,9 @@ module Unix : S = struct
     t.generation <- Raw.Generation.get t.raw;
     t.generation
 
-  let version t = t.version
+  let version t =
+    Log.debug (fun l -> l "version %a" pp_version t.version);
+    t.version
 
   let readonly t = t.readonly
 
@@ -190,7 +199,7 @@ module Unix : S = struct
     Log.debug (fun l -> l "clear %s" t.file);
     Buffer.clear t.buf;
     (* no-op if the file is already empty; this is to avoid bumping
-       the version  number when this is not necessary. *)
+       the version number when this is not necessary. *)
     if t.offset = 0L then ()
     else (
       t.offset <- 0L;
@@ -258,10 +267,33 @@ module Unix : S = struct
                 Fmt.pf ppf "%a (%S)" pp_version v (bin_of_version v)
               in
               Fmt.failwith "invalid version: got %S, expecting %a" version
-                (Fmt.Dump.list pp_full_version)
+                Fmt.(Dump.list pp_full_version)
                 (List.map fst versions))
 
   let close t = Raw.close t.raw
+
+  let rmdir path =
+    let rec aux path =
+      match Sys.is_directory path with
+      | true ->
+          Sys.readdir path |> Array.iter (fun name -> aux (path // name));
+          Unix.rmdir path
+      | false -> Sys.remove path
+    in
+    aux path
+
+  let rename_dir ~src ~dst =
+    Log.debug (fun l -> l "rename_dir %s to %s" src dst);
+    rmdir dst;
+    Unix.rename src dst
+
+  (* Extracted from https://github.com/dbuenzli/bos *)
+  let tmp_dir pat =
+    let rand_path =
+      let rand = Random.State.(bits (make_self_init ())) land 0xFFFFFF in
+      Printf.sprintf "%s-%06x" pat rand
+    in
+    Filename.get_temp_dir_name () // rand_path
 end
 
 let with_cache ~v ~clear ~valid file =

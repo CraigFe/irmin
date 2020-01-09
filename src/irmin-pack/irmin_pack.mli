@@ -70,6 +70,10 @@ module type Stores_extra = sig
   (** [clear t] removes all the data persisted in [t]. This operations provides
       snapshot isolation guarantees for read-only instances: read-only instance
       will continue to see all the data until they explicitely call {!sync}. *)
+
+  val migrate : Irmin.config -> unit Lwt.t
+  (** [migrate conf] migrates a store with configuration [conf] to the current
+      version. Raises [RO_Not_Allowed] if called by a readonly instance. *)
 end
 
 module Make_ext

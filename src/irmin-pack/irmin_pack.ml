@@ -255,6 +255,12 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Hash.S) = struct
     Tbl.clear t.cache;
     Tbl.clear t.index
 
+  let clear t =
+    Log.debug (fun l -> l "[branches] clear");
+    Lwt_mutex.with_lock t.lock (fun () ->
+        unsafe_clear t;
+        Lwt.return_unit)
+
   let create = Lwt_mutex.create ()
 
   let watches = W.v ()
@@ -348,6 +354,13 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Hash.S) = struct
     else Lwt.return_unit
 
   let close t = Lwt_mutex.with_lock t.lock (fun () -> unsafe_close t)
+
+  let iter t f =
+    list t
+    >>= Lwt_list.iter_s (fun branch ->
+            find t branch >>= function
+            | None -> Lwt.return_unit
+            | Some commit -> f branch commit)
 end
 
 module type CONFIG = Inode.CONFIG
@@ -366,6 +379,8 @@ module type Stores_extra = sig
   val sync : repo -> unit
 
   val clear : repo -> unit Lwt.t
+
+  val migrate : Irmin.config -> unit Lwt.t
 end
 
 module Make_ext
@@ -557,8 +572,70 @@ struct
         in
         Contents.CA.sync ~on_generation_change (contents_t t)
 
-      (** Storea share instances so one clear is enough. *)
+      (** Stores share instances so one clear is enough. *)
       let clear t = Contents.CA.clear (contents_t t)
+
+      let migrate_stores v1 v2 =
+        let nb_commits = ref 0 in
+        let nb_nodes = ref 0 in
+        let nb_contents = ref 0 in
+        let contents = contents_t v1 in
+        let nodes = node_t v1 |> snd in
+        let commits = commit_t v1 |> snd in
+        let pp_stats () =
+          Log.app (fun l ->
+              l "\t%dk contents / %dk nodes / %dk commits" (!nb_contents / 1000)
+                (!nb_nodes / 1000) (!nb_commits / 1000))
+        in
+        let count_increment count =
+          incr count;
+          if !count mod 1000 = 0 then pp_stats ()
+        in
+        let f k (offset, length, m) =
+          match m with
+          | 'B' ->
+              count_increment nb_contents;
+              contents_t v2 |> Contents.CA.copy_entry ~offset ~length k contents
+          | 'N' | 'I' ->
+              count_increment nb_nodes;
+              node_t v2 |> snd |> Node.CA.copy_entry ~offset ~length k nodes
+          | 'C' ->
+              count_increment nb_commits;
+              commit_t v2
+              |> snd
+              |> Commit.CA.copy_entry ~offset ~length k commits
+          | c -> Fmt.failwith "Unknown content type: %c" c
+        in
+        Index.iter f v1.index
+
+      let migrate config =
+        if readonly config then Lwt.fail RO_Not_Allowed
+        else
+          let config = Irmin.Private.Conf.add config readonly_key true in
+          unsafe_v config >>= fun t ->
+          match Contents.CA.version (contents_t t) with
+          | `V2 ->
+              Log.app (fun l -> l "store is already in current version");
+              close t
+          | `V1 ->
+              let v1 = t in
+              (*open a fresh, read-write store in V2 *)
+              let root = root config in
+              let root_v2 = IO.tmp_dir "irmin-migrate" in
+              let config =
+                Irmin.Private.Conf.add config root_key (Some root_v2)
+              in
+              let config = Irmin.Private.Conf.add config readonly_key false in
+              let config = Irmin.Private.Conf.add config fresh_key true in
+              v config >>= fun v2 ->
+              (*copy index entries from v1 to v2*)
+              migrate_stores v1 v2;
+              (*copy branches from v1 to v2*)
+              Branch.iter (branch_t v1) (Branch.set (branch_t v2)) >>= fun () ->
+              close v1 >>= fun () ->
+              close v2 >|= fun () ->
+              (*rename v2 store and erase v1 store *)
+              IO.rename_dir ~src:root_v2 ~dst:root
     end
   end
 
@@ -632,6 +709,8 @@ struct
   let sync = X.Repo.sync
 
   let clear = X.Repo.clear
+
+  let migrate = X.Repo.migrate
 end
 
 module Hash = Irmin.Hash.BLAKE2B

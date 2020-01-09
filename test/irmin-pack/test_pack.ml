@@ -43,10 +43,15 @@ let suite =
   let clean () =
     let (module S : Irmin_test.S) = store in
     let module P = S.Private in
+    let clear repo =
+      P.Commit.clear (P.Repo.commit_t repo) >>= fun () ->
+      P.Node.clear (P.Repo.node_t repo) >>= fun () ->
+      P.Contents.clear (P.Repo.contents_t repo) >>= fun () ->
+      P.Branch.clear (P.Repo.branch_t repo)
+    in
     let config = Irmin_pack.config ~fresh:true ~lru_size:0 test_dir in
     S.Repo.v config >>= fun repo ->
-    S.Repo.branches repo >>= Lwt_list.iter_p (S.Branch.remove repo)
-    >>= fun () -> S.Repo.close repo
+    clear repo >>= fun () -> S.Repo.close repo
   in
   let stats = None in
   { Irmin_test.name = "PACK"; init; clean; config; store; stats }
@@ -113,7 +118,7 @@ module Dict = struct
     ignore_int (Dict.index dict "titiabc");
     ignore_int (Dict.index dict "foo");
     Dict.flush dict;
-    Dict.sync r;
+    Dict.sync ~force_refill:false r;
     check_index "titiabc" 3;
     check_index "bar" 1;
     check_index "toto" 2;
@@ -123,7 +128,7 @@ module Dict = struct
     check_raise "hello";
     check_none "hello" 4;
     Dict.flush dict;
-    Dict.sync r;
+    Dict.sync ~force_refill:false r;
     check_find "hello" 4;
     Dict.close dict;
     Dict.close r
@@ -593,4 +598,5 @@ let misc =
     ("pack-files", Pack.tests);
     ("branch-files", Branch.tests);
     ("instances", Multiple_instances.tests);
+    ("migration", Migration.tests);
   ]

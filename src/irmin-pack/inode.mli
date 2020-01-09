@@ -49,6 +49,8 @@ module type S = sig
   val sync : ?on_generation_change:(unit -> unit) -> 'a t -> unit
 
   val clear_caches : 'a t -> unit
+
+  val copy_entry : offset:int64 -> length:int -> key -> 'a t -> 'a t -> unit
 end
 
 module Make

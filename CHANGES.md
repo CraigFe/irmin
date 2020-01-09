@@ -27,11 +27,16 @@
     let encode_bin = Type.(unstage (encode_bin ty))
     let _ = <begin loop> ... encode_bin foo ... <end loop>
     ```
+  - Added a `clear` function for stores (#1015, @icristescu)
 
 - **irmin-pack**:
   - Added `index_throttle` option to `Irmin_pack.config`, which exposes the
     memory throttle feature of `Index` in `Irmin-Pack`. (#1049, @icristescu)
+
   - Added `Pack.clear` and `Dict.clear` (#1047, @icristescu, @CraigFe, @samoht)
+
+  - Added a migration function from version 1 to version 2, called automatically
+    when a store in version 1 is opened. (#1015, @icristescu)
 
 #### Changed
 
@@ -44,8 +49,10 @@
 - **irmin-pack**:
   - `sync` has to be called by the read-only instance to synchronise with the
     files on disk. (#1008, @icristescu)
+
   - Renamed `sync` to `flush` for the operation that flushes to disk all buffers
     of a read-write instance. (#1008, @icristescu)
+
   - Changed the format of headers for the files on disk to include a generation
     number. Version 1 of irmin-pack was used for the previous format, version 2
     is used with the new format. (#1047, @icristescu, @CraigFe, @samoht)
