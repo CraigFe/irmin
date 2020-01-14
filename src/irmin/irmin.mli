@@ -142,65 +142,12 @@ end
     Default implementations for {{!Contents.String}idempotent string}
     and {{!Contents.Json}JSON} contents are provided. *)
 module Contents : sig
+  include module type of Contents
+
   module type S = S.CONTENTS
 
-  module String : S with type t = string
-  (** Contents of type [string], with the {{!Irmin.Merge.default}default}
-      3-way merge strategy: assume that update operations are idempotent and
-      conflict iff values are modified concurrently. *)
-
-  type json =
-    [ `Null
-    | `Bool of bool
-    | `String of string
-    | `Float of float
-    | `O of (string * json) list
-    | `A of json list ]
-
-  module Json : S with type t = (string * json) list
-  (** [Json] contents are associations from strings to [json] values
-     stored as JSON encoded strings.  If the same JSON key has been
-     modified concurrently with different values then the [merge]
-     function conflicts. *)
-
-  module Json_value : S with type t = json
-  (** [Json_value] allows any kind of json value to be stored, not only objects. *)
-
-  module V1 : sig
-    module String : S with type t = string
-    (** Same as {!String} but use v1 serialisation format. *)
-  end
-
   (** Contents store. *)
-  module type STORE = sig
-    include CONTENT_ADDRESSABLE_STORE
-
-    val merge : [ `Read | `Write ] t -> key option Merge.t
-    (** [merge t] lifts the merge functions defined on contents values
-        to contents key. The merge function will: {e (i)} read the
-        values associated with the given keys, {e (ii)} use the merge
-        function defined on values and {e (iii)} write the resulting
-        values into the store to get the resulting key. See
-        {!Contents.S.merge}.
-
-        If any of these operations fail, return [`Conflict]. *)
-
-    (** [Key] provides base functions for user-defined contents keys. *)
-    module Key : Hash.TYPED with type t = key and type value = value
-
-    module Val : S with type t = value
-    (** [Val] provides base functions for user-defined contents values. *)
-  end
-
-  (** [Store] creates a contents store. *)
-  module Store (S : sig
-    include CONTENT_ADDRESSABLE_STORE
-
-    module Key : Hash.S with type t = key
-
-    module Val : S with type t = value
-  end) :
-    STORE with type 'a t = 'a S.t and type key = S.key and type value = S.value
+  module type STORE = S.CONTENTS_STORE
 end
 
 (** User-defined branches. *)
@@ -211,21 +158,7 @@ module Branch : sig
       branches: they are used to associated user-defined names to head
       commits. Branches have a default value: the
       {{!Branch.S.master}master} branch. *)
-  module type S = sig
-    (** {1 Signature for Branches} *)
-
-    type t
-    (** The type for branches. *)
-
-    val t : t Type.t
-    (** [t] is the value type for {!t}. *)
-
-    val master : t
-    (** The name of the master branch. *)
-
-    val is_valid : t -> bool
-    (** Check if the branch is valid. *)
-  end
+  module type S = S.BRANCH
 
   module String : S with type t = string
   (** [String] is an implementation of {{!Branch.S}S} where branches
@@ -238,29 +171,18 @@ module Branch : sig
       A {i branch store} is a mutable and reactive key / value store,
       where keys are branch names created by users and values are keys
       are head commmits. *)
-  module type STORE = sig
-    (** {1 Branch Store} *)
-
-    include ATOMIC_WRITE_STORE
-
-    module Key : S with type t = key
-    (** Base functions on keys. *)
-
-    module Val : Hash.S with type t = value
-    (** Base functions on values. *)
-  end
+  module type STORE = S.BRANCH_STORE
 end
 
 type remote = S.remote = ..
 (** The type for remote stores. *)
 
+(* XXX(CraigFe: made this type concrete) *)
 type config = Conf.t
 (** The type for backend-specific configuration values.
 
     Every backend has different configuration options, which are kept
     abstract to the user. *)
-
-(* XXX(CraigFe: made this type concrete) *)
 
 (** [Private] defines functions only useful for creating new
     backends. If you are just using the library (and not developing a
@@ -393,18 +315,7 @@ module Private : sig
   module Commit : sig
     module type S = S.COMMIT
 
-    (** [Make] provides a simple implementation of commit values,
-        parameterized by the commit and node keys [K]. *)
-    module Make (K : Type.S) : S with type hash = K.t
-
-    (** V1 serialisation. *)
-    module V1 (S : S) : sig
-      include S with type hash = S.hash
-
-      val import : S.t -> t
-
-      val export : t -> S.t
-    end
+    include module type of Commit
 
     (** [STORE] specifies the signature for commit stores. *)
     module type STORE = sig
@@ -425,22 +336,6 @@ module Private : sig
       (** [Node] is the underlying node store. *)
     end
 
-    (** [Store] creates a new commit store. *)
-    module Store
-        (N : Node.STORE) (S : sig
-          include CONTENT_ADDRESSABLE_STORE with type key = N.key
-
-          module Key : Hash.S with type t = key
-
-          module Val : S with type t = value and type hash = key
-        end) :
-      STORE
-        with type 'a t = 'a N.t * 'a S.t
-         and type key = S.key
-         and type value = S.value
-         and type Key.t = S.Key.t
-         and module Val = S.Val
-
     module type HISTORY = S.COMMIT_HISTORY
     (** [History] specifies the signature for commit history. The
         history is represented as a partial-order of commits and basic
@@ -448,13 +343,6 @@ module Private : sig
 
         Every commit can point to an entry point in a node graph, where
         user-defined contents are stored. *)
-
-    (** Build a commit history. *)
-    module History (S : STORE) :
-      HISTORY
-        with type 'a t = 'a S.t
-         and type node = S.Node.key
-         and type commit = S.key
   end
 
   (** The signature for slices. *)
@@ -467,14 +355,7 @@ module Private : sig
   module Sync : sig
     module type S = S.SYNC
 
-    (** [None] is an implementation of {{!Private.Sync.S}S} which does
-        nothing. *)
-    module None (H : Type.S) (B : Type.S) : sig
-      include S with type commit = H.t and type branch = B.t
-
-      val v : 'a -> t Lwt.t
-      (** Create a remote store handle. *)
-    end
+    include module type of Sync
   end
 
   (** The complete collection of private implementations. *)
@@ -1893,29 +1774,7 @@ end ]}
 
 (** [Dot] provides functions to export a store to the Graphviz `dot`
     format. *)
-module Dot (S : S) : sig
-  (** {1 Dot Export} *)
-
-  val output_buffer :
-    S.t ->
-    ?html:bool ->
-    ?depth:int ->
-    ?full:bool ->
-    date:(int64 -> string) ->
-    Buffer.t ->
-    unit Lwt.t
-  (** [output_buffer t ?html ?depth ?full buf] outputs the Graphviz
-        representation of [t] in the buffer [buf].
-
-        [html] (default is false) enables HTML labels.
-
-        [depth] is used to limit the depth of the commit history. [None]
-        here means no limitation.
-
-        If [full] is set (default is not) the full graph, including the
-        commits, nodes and contents, is exported, otherwise it is the
-        commit history graph only. *)
-end
+module Dot : module type of Dot.Make
 
 (** {1:backend Backends}
 
@@ -1974,13 +1833,7 @@ end
 (** [ATOMIC_WRITE_STORE_MAKER] is the signature exposed by atomic-write
     store backends. [K] is the implementation of keys and [V] is the
     implementation of values.*)
-module type ATOMIC_WRITE_STORE_MAKER = functor (K : Type.S) (V : Type.S) -> sig
-  include ATOMIC_WRITE_STORE with type key = K.t and type value = V.t
-
-  val v : config -> t Lwt.t
-  (** [v config] is a function returning fresh store handles, with the
-      configuration [config], which is provided by the backend. *)
-end
+module type ATOMIC_WRITE_STORE_MAKER = S.ATOMIC_WRITE_STORE_MAKER
 
 (** Simple store creator. Use the same type of all of the internal
     keys and store all the values in the same store. *)

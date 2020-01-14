@@ -237,9 +237,19 @@ module type CONTENTS_STORE = sig
   include CONTENT_ADDRESSABLE_STORE
 
   val merge : [ `Read | `Write ] t -> key option Merge.t
+  (** [merge t] lifts the merge functions defined on contents values
+      to contents key. The merge function will: {e (i)} read the
+      values associated with the given keys, {e (ii)} use the merge
+      function defined on values and {e (iii)} write the resulting
+      values into the store to get the resulting key. See
+      {!Contents.S.merge}.
 
+      If any of these operations fail, return [`Conflict]. *)
+
+  (** [Key] provides base functions for user-defined contents keys. *)
   module Key : TYPED_HASH with type t = key and type value = value
 
+  (** [Val] provides base functions for user-defined contents values. *)
   module Val : CONTENTS with type t = value
 end
 
@@ -600,11 +610,19 @@ module type SLICE = sig
 end
 
 module type BRANCH = sig
-  include Type.S
+  (** {1 Signature for Branches} *)
+
+  type t
+  (** The type for branches. *)
+
+  val t : t Type.t
+  (** [t] is the value type for {!t}. *)
 
   val master : t
+  (** The name of the master branch. *)
 
   val is_valid : t -> bool
+                        (** Check if the branch is valid. *)
 end
 
 module type ATOMIC_WRITE_STORE = sig
@@ -681,15 +699,21 @@ end
 module type ATOMIC_WRITE_STORE_MAKER = functor (K : Type.S) (V : Type.S) -> sig
   include ATOMIC_WRITE_STORE with type key = K.t and type value = V.t
 
-  val v : Conf.t -> t Lwt.t
+  val v : config -> t Lwt.t
+  (** [v config] is a function returning fresh store handles, with the
+      configuration [config], which is provided by the backend. *)
 end
 
 module type BRANCH_STORE = sig
+  (** {1 Branch Store} *)
+
   include ATOMIC_WRITE_STORE
 
   module Key : BRANCH with type t = key
+  (** Base functions on keys. *)
 
   module Val : HASH with type t = value
+  (** Base functions on values. *)
 end
 
 type remote = ..

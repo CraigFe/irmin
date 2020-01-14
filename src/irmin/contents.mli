@@ -16,6 +16,11 @@
 
 (** Values. *)
 
+module String : S.CONTENTS with type t = string
+(** Contents of type [string], with the {{!Irmin.Merge.default}default}
+    3-way merge strategy: assume that update operations are idempotent and
+    conflict iff values are modified concurrently. *)
+
 type json =
   [ `Null
   | `Bool of bool
@@ -24,11 +29,14 @@ type json =
   | `O of (string * json) list
   | `A of json list ]
 
-module String : S.CONTENTS with type t = string
-
 module Json : S.CONTENTS with type t = (string * json) list
+(** [Json] contents are associations from strings to [json] values
+    stored as JSON encoded strings.  If the same JSON key has been
+    modified concurrently with different values then the [merge]
+    function conflicts. *)
 
 module Json_value : S.CONTENTS with type t = json
+(** [Json_value] allows any kind of json value to be stored, not only objects. *)
 
 module Json_tree (Store : S.STORE with type contents = json) : sig
   include S.CONTENTS with type t = json
@@ -48,8 +56,10 @@ end
 
 module V1 : sig
   module String : S.CONTENTS with type t = string
+  (** Same as {!String} but use v1 serialisation format. *)
 end
 
+(** [Store] creates a contents store. *)
 module Store (C : sig
   include S.CONTENT_ADDRESSABLE_STORE
 

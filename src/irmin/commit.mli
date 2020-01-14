@@ -16,8 +16,11 @@
 
 (** Manage the database history. *)
 
+(** [Make] provides a simple implementation of commit values,
+        parameterized by the commit and node keys [K]. *)
 module Make (K : Type.S) : S.COMMIT with type hash = K.t
 
+(** [Store] creates a new commit store. *)
 module Store
     (N : S.NODE_STORE) (C : sig
       include S.CONTENT_ADDRESSABLE_STORE with type key = N.key
@@ -33,6 +36,7 @@ module Store
      and type Key.t = C.Key.t
      and module Val = C.Val
 
+(** Build a commit history. *)
 module History (C : S.COMMIT_STORE) :
   S.COMMIT_HISTORY
     with type 'a t = 'a C.t
@@ -40,6 +44,7 @@ module History (C : S.COMMIT_STORE) :
      and type node = C.Node.key
      and type commit = C.key
 
+(** V1 serialisation. *)
 module V1 (C : S.COMMIT) : sig
   include S.COMMIT with type hash = C.hash
 

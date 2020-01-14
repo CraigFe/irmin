@@ -16,8 +16,11 @@
 
 (** Store Synchronisation signatures. *)
 
+(** [None] is an implementation of {{!Private.Sync.S}S} which does
+        nothing. *)
 module None (H : Type.S) (R : Type.S) : sig
   include S.SYNC with type commit = H.t and type branch = R.t
 
   val v : 'a -> t Lwt.t
+  (** Create a remote store handle. *)
 end
