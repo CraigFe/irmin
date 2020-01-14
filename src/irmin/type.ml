@@ -69,7 +69,8 @@ type 'a pp = 'a Fmt.t
 
 type 'a of_string = string -> ('a, [ `Msg of string ]) result
 
-type 'a to_string = 'a -> string
+(* XXX(CraigFe): remove *)
+(* type 'a to_string = 'a -> string *)
 
 type 'a encode_json = Jsonm.encoder -> 'a -> unit
 
