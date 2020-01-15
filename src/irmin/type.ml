@@ -69,8 +69,6 @@ type 'a pp = 'a Fmt.t
 
 type 'a of_string = string -> ('a, [ `Msg of string ]) result
 
-type 'a to_string = 'a -> string
-
 type 'a encode_json = Jsonm.encoder -> 'a -> unit
 
 type 'a decode_json = Json.decoder -> ('a, [ `Msg of string ]) result
