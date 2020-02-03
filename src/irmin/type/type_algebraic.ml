@@ -1,21 +1,93 @@
 module Record (M : S.MONAD) = struct
+  open M.Infix
   module Lens = Optics.Lens (M)
 
   open Type_core.Make (M)
 
+  type ('record, 'field) getter = 'record -> 'field M.t
+
+  type ('record, 'field) mutator = 'field -> 'record -> 'record M.t
+
+  type ('record, 'field, 'todo) open_mutator = 'record -> 'field -> 'todo M.t
+  (** When ['todo] = ['record], the mutator has been fully constructed. *)
+
+  (** A list of {!open_mutator}s (with the same ['todo]s remaining). *)
+  type ('record, 'fields, 'fields_nil, 'todo) open_mutator_list =
+    | Mutator_nil : ('record, 'fields_nil, 'fields_nil, 'todo) open_mutator_list
+    | Mutator_cons :
+        ('record, 'field, 'todo) open_mutator
+        * ('record, 'fields, 'fields_nil, 'todo) open_mutator_list
+        -> ('record, 'field * 'fields, 'fields_nil, 'todo) open_mutator_list
+
   module Unwitnessed = struct
-    type ('record, 'cons, 'lens, 'lens_nil) t = {
-      name : string;
-      cons : 'cons;
-      fields : ('record, 'cons, 'lens, 'lens_nil) fields;
+    type ('record, 'cons, 'lens, 'lens_nil, 'fields, 'fields_nil) t = {
+      fields : ('record, 'cons, 'lens, 'lens_nil, 'fields, 'fields_nil) fields;
+      mutators : ('record, 'fields, 'fields_nil, 'cons) open_mutator_list;
     }
   end
 
-  type ('record, 'constr, 'remaining, 'lenses, 'lens_nil) open_record = {
+  let augment :
+      type r f ret f_get.
+      (r, f_get) getter -> (r -> (f_get -> ret) M.t) -> r -> ret M.t =
+   fun getter f record ->
+    getter record >>= fun x ->
+    f record >|= fun f -> f x
+
+  (** Take an unfinished mutator and embed a getter inside it. *)
+  let augment_mutator :
+      type r f f_get todo.
+      (r, f_get) getter ->
+      (r, f, f_get -> todo) open_mutator ->
+      (r, f, todo) open_mutator =
+   fun getter mutator record field ->
+    mutator record field >>= fun m -> getter record >|= m
+
+  let rec augment_mutators :
+      type r f_get fs todo nil.
+      (r, f_get) getter ->
+      (r, fs, nil, f_get -> todo) open_mutator_list ->
+      (r, fs, nil, todo) open_mutator_list =
+   fun getter -> function
+    | Mutator_nil -> Mutator_nil
+    | Mutator_cons (c, cs) ->
+        let c : (r, _, todo) open_mutator = augment_mutator getter c in
+        let cs : (r, _, nil, todo) open_mutator_list =
+          augment_mutators getter cs
+        in
+        Mutator_cons (c, cs)
+
+  (* let push_getter :
+   *   (r, f_get) getter ->
+   *   (r -> (f_get -> todo) M.t) ->
+   *   (r -> todo M.t)
+   *   =
+   *   fun getter cons -> *)
+
+  let add_mutator :
+      type r f f_get pat fs todo nil.
+      (r, f_get) getter ->
+      (r, fs, nil, f_get -> todo) open_mutator_list * (r -> (f_get -> todo) M.t) ->
+      (r, f_get * fs, nil, todo) open_mutator_list * (r -> todo M.t) =
+   fun getter (ms, cons) ->
+    let m : (r, f_get, todo) open_mutator =
+     fun r f -> cons r >|= fun f_getter -> f_getter f
+    in
+    let ms : (r, fs, nil, todo) open_mutator_list =
+      augment_mutators getter ms
+    in
+    let cons : r -> todo M.t = augment getter cons in
+    (Mutator_cons (m, ms), cons)
+
+  type ('r, 'constr, 'rem, 'lenses, 'lens_nil, 'fields, 'fields_nil) open_record = {
+    name : string;
+    constructor : 'constr;
+    remaining : 'r -> 'rem M.t;
     open_record :
-      'hole. ('record, 'remaining, 'lens_nil, 'hole) fields ->
-      (* Append the two lens lists at the type level *)
-      ('record, 'constr, 'lenses, 'hole) Unwitnessed.t;
+      'lens_hole 'fields_hole.
+      fields:('r, 'rem, 'lens_nil, 'lens_hole, 'fields_nil, 'fields_hole) fields ->
+      mutators:('r, 'fields_nil, 'fields_hole, 'rem) open_mutator_list ->
+      (* Append the two lists at the type level *)
+      ('r, 'constr, 'lenses, 'lens_hole, 'fields, 'fields_hole) Unwitnessed.t;
   }
 
   type nonrec ('a, 'b) field = ('a, 'b) field
@@ -23,31 +95,53 @@ module Record (M : S.MONAD) = struct
   let field fname ftype fget = { fname; ftype; fget }
 
   let record :
-      type r. string -> r -> ('a, r, r, 'lens_nil, 'lens_nil) open_record =
-   fun name cons ->
-    let open_record fields = Unwitnessed.{ name; cons; fields } in
-    { open_record }
+      type r.
+      string ->
+      r ->
+      ('a, r, r, 'lens_nil, 'lens_nil, 'fields, 'fields_nil) open_record =
+   fun name constructor ->
+    let open_record ~fields ~mutators = Unwitnessed.{ fields; mutators } in
+    {
+      name;
+      constructor;
+      remaining = (fun _ -> M.return constructor);
+      open_record;
+    }
 
   let app :
-      type r c ft rem lens lens_nil.
-      (r, c, ft -> rem, lens, (r, ft) Lens.mono * lens_nil) open_record ->
+      type r c ft rem lens lens_nil fs fields_nil.
+      ( r,
+        c,
+        ft -> rem,
+        lens,
+        (r, ft) Lens.mono * lens_nil,
+        fs,
+        ft * fields_nil )
+      open_record ->
       (r, ft) field ->
-      (r, c, rem, lens, lens_nil) open_record =
-   fun { open_record = previous } field ->
+      (r, c, rem, lens, lens_nil, fs, fields_nil) open_record =
+   fun { name; constructor; remaining; open_record = previous } field ->
     let open_record' :
-        type hole.
-        (r, rem, lens_nil, hole) fields -> (r, c, lens, hole) Unwitnessed.t =
-     fun fs -> previous (Fields_cons (field, fs))
+        type lens_hole fields_hole.
+        (r, rem, lens_nil, lens_hole, fields_nil, fields_hole) fields ->
+        (r, fields_nil, fields_hole, rem) open_mutator_list ->
+        (r, c, lens, lens_hole, fs, fields_hole) Unwitnessed.t =
+     fun ~fields:fs ~mutators:ms ->
+      let fields = Fields_cons (field, fs) in
+      let mutators = add_mutator field.fget ms in
+      previous ~fields ~mutators
     in
-    { open_record = open_record' }
+    { name; constructor; open_record = open_record' }
 
   (* Ground lens list with [unit] *)
   let sealr_with_optics :
-      type record cons lens.
-      (record, cons, record, lens, unit) open_record ->
+      type record cons lens fields.
+      (record, cons, record, lens, unit, fields, record M.t) open_record ->
       record t * lens Lens.t_list =
-   fun { open_record = r } ->
-    let Unwitnessed.{ name; cons; fields } = r Fields_nil in
+   fun { name; constructor; open_record = r } ->
+    let Unwitnessed.{ fields; mutators } =
+      r ~fields:Fields_nil ~mutators:Mutators_nil
+    in
     let rwit = Witness.make () in
     let lenses =
       let open Lens in
@@ -61,7 +155,8 @@ module Record (M : S.MONAD) = struct
       in
       inner fields
     in
-    (Record { rwit; rname = name; rfields = Fields (fields, cons) }, lenses)
+    ( Record { rwit; rname = name; rfields = Fields (fields, constructor) },
+      lenses )
 
   let sealr : type a b. (a, b, a, _, _) open_record -> a t =
    fun r -> sealr_with_optics r |> fst

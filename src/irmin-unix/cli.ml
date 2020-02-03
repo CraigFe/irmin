@@ -636,7 +636,7 @@ let help =
          | Some topic -> (
              let topics = "irmin.yml" :: cmds in
              let conv, _ =
-               Arg.enum (List.rev_map (fun s -> (s, s)) ("topics" :: topics))
+               Arg.inum (List.rev_map (fun s -> (s, s)) ("topics" :: topics))
              in
              match conv topic with
              | `Error e -> `Error (false, e)

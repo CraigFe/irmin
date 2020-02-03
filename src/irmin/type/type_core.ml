@@ -121,7 +121,7 @@ module Make (M : S.MONAD) = struct
   }
 
   and 'a fields_and_constr =
-    | Fields : ('a, 'b, _, _) fields * 'b -> 'a fields_and_constr
+    | Fields : ('a, 'b, _, _, _, _) fields * 'b -> 'a fields_and_constr
 
   (** We need to maintain two kinds of type-level difference list. The type
       parameters [('record, 'constr, 'lens, 'lens_nil)] have the following
@@ -157,14 +157,24 @@ module Make (M : S.MONAD) = struct
                                                         Lens.mono
       ]} *)
 
-  and ('record, 'constr, 'lenses, 'lens_nil) fields =
-    | Fields_nil : ('record, 'record, 'lens_nil, 'lens_nil) fields
+  and ('record, 'constr, 'lenses, 'lens_nil, 'fields, 'fields_nil) fields =
+    | Fields_nil
+        : ( 'record,
+            'record,
+            'lens_nil,
+            'lens_nil,
+            'fields_nil,
+            'fields_nil )
+          fields
     | Fields_cons :
-        ('record, 'field) field * ('record, 'constr, 'lenses, 'lens_nil) fields
+        ('record, 'field) field
+        * ('record, 'constr, 'lenses, 'lens_nil, 'fields, 'fields_nil) fields
         -> ( 'record,
              'field -> 'constr,
              ('record, 'field) Lens.mono * 'lenses,
-             'lens_nil )
+             'lens_nil,
+             'field * 'fields,
+             'fields_nil )
            fields
 
   and ('a, 'b) field = { fname : string; ftype : 'b t; fget : 'a -> 'b M.t }
@@ -218,8 +228,8 @@ module Make (M : S.MONAD) = struct
 
   type _ a_field = Field : ('a, 'b) field -> 'a a_field
 
-  let rec fields_aux : type a b c d. (a, b, c, d) fields -> a a_field list =
-    function
+  let rec fields_aux :
+      type a b c d e f. (a, b, c, d, e, f) fields -> a a_field list = function
     | Fields_nil -> []
     | Fields_cons (h, t) -> Field h :: fields_aux t
 

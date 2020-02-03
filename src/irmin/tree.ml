@@ -180,6 +180,7 @@ module Make (P : S.PRIVATE) = struct
 
     let v =
       let open Type in
+
       variant "Node.Contents.v" (fun hash value ->
         function Hash (_, x) -> hash x | Value v -> value v)
       |~ case1 "hash" P.Hash.t (fun _ -> assert false)
