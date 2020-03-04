@@ -224,7 +224,7 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Hash.S) = struct
         open_instances = 1;
       }
     in
-    refill t ~from:0L;
+    if not readonly then refill t ~from:0L;
     t
 
   let (`Staged unsafe_v) =

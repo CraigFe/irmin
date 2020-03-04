@@ -117,13 +117,34 @@ module Unix : S = struct
 
   type t = {
     file : string;
-    mutable raw : Raw.t;
+    mutable raw : Raw.t option;
     mutable offset : int64;
     mutable flushed : int64;
     readonly : bool;
     version : string;
     buf : Buffer.t;
   }
+
+  let may f = function None -> () | Some bf -> f bf
+
+  let assert_and_get = function None -> assert false | Some e -> e
+
+  (* only RO instances could not have the file opened yet. *)
+  let try_load_file t =
+    match t.raw with
+    | Some _ -> ()
+    | None ->
+        Log.debug (fun l -> l "checking on-disk %s" t.file);
+        if Sys.file_exists t.file then (
+          let x =
+            Unix.openfile t.file Unix.[ O_EXCL; O_RDONLY; O_CLOEXEC ] 0o644
+          in
+          let raw = Raw.v x in
+          let version = Raw.unsafe_get_version raw in
+          assert (version = t.version);
+          t.raw <- Some raw;
+          t.offset <- 0L )
+        else ()
 
   let name t = t.file
 
@@ -132,13 +153,14 @@ module Unix : S = struct
   let sync t =
     if t.readonly then raise RO_Not_Allowed;
     Log.debug (fun l -> l "IO sync %s" t.file);
+    let raw = assert_and_get t.raw in
     let buf = Buffer.contents t.buf in
     let offset = t.offset in
     Buffer.clear t.buf;
     if buf = "" then ()
     else (
-      Raw.unsafe_write t.raw ~off:t.flushed buf;
-      Raw.unsafe_set_offset t.raw offset;
+      Raw.unsafe_write raw ~off:t.flushed buf;
+      Raw.unsafe_set_offset raw offset;
 
       (* concurrent append might happen so here t.offset might differ
          from offset *)
@@ -159,19 +181,24 @@ module Unix : S = struct
   let set t ~off buf =
     if t.readonly then raise RO_Not_Allowed;
     sync t;
-    Raw.unsafe_write t.raw ~off:(header ++ off) buf;
+    let raw = assert_and_get t.raw in
+    Raw.unsafe_write raw ~off:(header ++ off) buf;
     let len = Int64.of_int (String.length buf) in
     let off = header ++ off ++ len in
     assert (off <= t.flushed)
 
   let read t ~off buf =
+    try_load_file t;
+    let raw = assert_and_get t.raw in
     if not t.readonly then assert (header ++ off <= t.flushed);
-    Raw.unsafe_read t.raw ~off:(header ++ off) ~len:(Bytes.length buf) buf
+    Raw.unsafe_read raw ~off:(header ++ off) ~len:(Bytes.length buf) buf
 
   let offset t = t.offset
 
   let force_offset t =
-    t.offset <- Raw.unsafe_get_offset t.raw;
+    try_load_file t;
+    let raw = assert_and_get t.raw in
+    t.offset <- Raw.unsafe_get_offset raw;
     t.offset
 
   let version t = t.version
@@ -232,25 +259,27 @@ module Unix : S = struct
     mkdir (Filename.dirname file);
     match Sys.file_exists file with
     | false ->
-        let x = Unix.openfile file Unix.[ O_CREAT; mode; O_CLOEXEC ] 0o644 in
-        let raw = Raw.v x in
-        Raw.unsafe_set_offset raw 0L;
-        Raw.unsafe_set_version raw current_version;
-        v ~offset:0L ~version:current_version raw
+        if readonly then v ~offset:0L ~version:current_version None
+        else
+          let x = Unix.openfile file Unix.[ O_CREAT; mode; O_CLOEXEC ] 0o644 in
+          let raw = Raw.v x in
+          Raw.unsafe_set_offset raw 0L;
+          Raw.unsafe_set_version raw current_version;
+          v ~offset:0L ~version:current_version (Some raw)
     | true ->
         let x = Unix.openfile file Unix.[ O_EXCL; mode; O_CLOEXEC ] 0o644 in
         let raw = Raw.v x in
         if fresh then (
           Raw.unsafe_set_offset raw 0L;
           Raw.unsafe_set_version raw current_version;
-          v ~offset:0L ~version:current_version raw )
+          v ~offset:0L ~version:current_version (Some raw) )
         else
-          let offset = Raw.unsafe_get_offset raw in
+          let offset = if readonly then 0L else Raw.unsafe_get_offset raw in
           let version = Raw.unsafe_get_version raw in
           assert (version = current_version);
-          v ~offset ~version raw
+          v ~offset ~version (Some raw)
 
-  let close t = Unix.close t.raw.fd
+  let close t = may (fun raw -> Unix.close raw.Raw.fd) t.raw
 end
 
 let ( // ) = Filename.concat

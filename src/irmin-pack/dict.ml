@@ -110,7 +110,7 @@ module Make (IO : IO.S) : S = struct
     let cache = Hashtbl.create 997 in
     let index = Hashtbl.create 997 in
     let t = { capacity; index; cache; io; open_instances = 1 } in
-    refill ~from:0L t;
+    if not readonly then refill ~from:0L t;
     t
 
   let close t =
