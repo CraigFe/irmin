@@ -12,6 +12,11 @@
      - `Irmin.Type.enum` will now raise `Invalid_argument` if two cases of
        the enum have the same name.
 
+- **irmin-pack**
+  - Allow RO instances to be opened before an RW one. (#955, @icristescu)
+  - Opening an RO instances does not clear the buffers shared between RO
+  - instances and RW ones. (#954, @icristescu)
+
 ### 2.1.0 (2020-02-01)
 
 #### Added
