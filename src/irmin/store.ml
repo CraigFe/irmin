@@ -51,7 +51,7 @@ struct
     add t k v >|= fun () -> k
 end
 
-module Make (P : S.PRIVATE) = struct
+module Make_untyped (P : S.PRIVATE) = struct
   module Branch_store = P.Branch
 
   type branch = Branch_store.key
@@ -629,10 +629,10 @@ module Make (P : S.PRIVATE) = struct
         if r then t.tree <- Some tree;
         r
 
-  type write_error =
-    [ Merge.conflict | `Too_many_retries of int | `Test_was of tree option ]
+  type 'a write_error =
+    [ Merge.conflict | `Too_many_retries of int | `Test_was of 'a option ]
 
-  let pp_write_error ppf = function
+  let pp_write_error elt_t ppf = function
     | `Conflict e -> Fmt.pf ppf "Got a conflict: %s" e
     | `Too_many_retries i ->
         Fmt.pf ppf
@@ -640,10 +640,10 @@ module Make (P : S.PRIVATE) = struct
           i
     | `Test_was t ->
         Fmt.pf ppf "Test-and-set failed: got %a when reading the store"
-          Type.(pp (option Tree.tree_t))
+          Type.(pp (option elt_t))
           t
 
-  let write_error e : ('a, write_error) result Lwt.t = Lwt.return_error e
+  let write_error e : ('a, 'b write_error) result Lwt.t = Lwt.return_error e
 
   let err_test v = write_error (`Test_was v)
 
@@ -691,9 +691,9 @@ module Make (P : S.PRIVATE) = struct
 
   let ok x = Ok x
 
-  let fail name = function
+  let fail elt_t name = function
     | Ok x -> Lwt.return x
-    | Error e -> Fmt.kstrf Lwt.fail_with "%s: %a" name pp_write_error e
+    | Error e -> Fmt.kstrf Lwt.fail_with "%s: %a" name (pp_write_error elt_t) e
 
   let set_tree_once root key ~current_tree:_ ~new_tree =
     match new_tree with
@@ -707,7 +707,8 @@ module Make (P : S.PRIVATE) = struct
     Lwt.return_some v
 
   let set_tree_exn ?retries ?allow_empty ?parents ~info t k v =
-    set_tree ?retries ?allow_empty ?parents ~info t k v >>= fail "set_exn"
+    set_tree ?retries ?allow_empty ?parents ~info t k v
+    >>= fail Tree.tree_t "set_exn"
 
   let remove ?(retries = 13) ?allow_empty ?parents ~info t k =
     Log.debug (fun l -> l "debug %a" pp_key k);
@@ -716,14 +717,16 @@ module Make (P : S.PRIVATE) = struct
     Lwt.return_none
 
   let remove_exn ?retries ?allow_empty ?parents ~info t k =
-    remove ?retries ?allow_empty ?parents ~info t k >>= fail "remove_exn"
+    remove ?retries ?allow_empty ?parents ~info t k
+    >>= fail Tree.tree_t "remove_exn"
 
   let set ?retries ?allow_empty ?parents ~info t k v =
     let v = `Contents (v, Metadata.default) in
     set_tree t k ?retries ?allow_empty ?parents ~info v
 
   let set_exn ?retries ?allow_empty ?parents ~info t k v =
-    set t k ?retries ?allow_empty ?parents ~info v >>= fail "set_exn"
+    set t k ?retries ?allow_empty ?parents ~info v
+    >>= fail Tree.tree_t "set_exn"
 
   let test_and_set_tree_once ~test root key ~current_tree ~new_tree =
     match (test, current_tree) with
@@ -743,7 +746,7 @@ module Make (P : S.PRIVATE) = struct
   let test_and_set_tree_exn ?retries ?allow_empty ?parents ~info t k ~test ~set
       =
     test_and_set_tree ?retries ?allow_empty ?parents ~info t k ~test ~set
-    >>= fail "test_and_set_tree_exn"
+    >>= fail Tree.tree_t "test_and_set_tree_exn"
 
   let test_and_set ?retries ?allow_empty ?parents ~info t k ~test ~set =
     let test =
@@ -760,13 +763,13 @@ module Make (P : S.PRIVATE) = struct
 
   let test_and_set_exn ?retries ?allow_empty ?parents ~info t k ~test ~set =
     test_and_set ?retries ?allow_empty ?parents ~info t k ~test ~set
-    >>= fail "test_and_set_exn"
+    >>= fail Tree.tree_t "test_and_set_exn"
 
   let merge_once ~old root key ~current_tree ~new_tree =
     let old = Merge.promise old in
     Merge.f (Merge.option Tree.merge) ~old current_tree new_tree >>= function
     | Ok tr -> set_tree_once root key ~new_tree:tr ~current_tree
-    | Error e -> write_error (e :> write_error)
+    | Error e -> write_error (e :> tree write_error)
 
   let merge_tree ?(retries = 13) ?allow_empty ?parents ~info ~old t k tree =
     Log.debug (fun l -> l "merge %a" pp_key k);
@@ -776,7 +779,7 @@ module Make (P : S.PRIVATE) = struct
 
   let merge_tree_exn ?retries ?allow_empty ?parents ~info ~old t k tree =
     merge_tree ?retries ?allow_empty ?parents ~info ~old t k tree
-    >>= fail "merge_tree_exn"
+    >>= fail Tree.tree_t "merge_tree_exn"
 
   let merge ?retries ?allow_empty ?parents ~info ~old t k v =
     let old =
@@ -792,7 +795,8 @@ module Make (P : S.PRIVATE) = struct
     merge_tree ?retries ?allow_empty ?parents ~info ~old t k v
 
   let merge_exn ?retries ?allow_empty ?parents ~info ~old t k v =
-    merge ?retries ?allow_empty ?parents ~info ~old t k v >>= fail "merge_exn"
+    merge ?retries ?allow_empty ?parents ~info ~old t k v
+    >>= fail Tree.tree_t "merge_exn"
 
   let mem t k = tree t >>= fun tree -> Tree.mem tree k
 
@@ -858,7 +862,7 @@ module Make (P : S.PRIVATE) = struct
 
   let with_tree_exn ?retries ?allow_empty ?parents ?strategy ~info f t key =
     with_tree ?retries ?allow_empty ?strategy ?parents ~info f t key
-    >>= fail "with_tree_exn"
+    >>= fail Tree.tree_t "with_tree_exn"
 
   let clone ~src ~dst =
     (Head.find src >>= function
@@ -1125,23 +1129,35 @@ module Make (P : S.PRIVATE) = struct
         ("rejected", `Rejected);
       ]
 
-  let write_error_t =
+  let write_error_t : type a. a Type.t -> a write_error Type.t =
+   fun elt_t ->
     let open Type in
     variant "write-error" (fun c m e ->
       function
       | `Conflict x -> c x | `Too_many_retries x -> m x | `Test_was x -> e x)
     |~ case1 "conflict" string (fun x -> `Conflict x)
     |~ case1 "too-many-retries" int (fun x -> `Too_many_retries x)
-    |~ case1 "test-got" (option tree_t) (fun x -> `Test_was x)
+    |~ case1 "test-got" (option elt_t) (fun x -> `Test_was x)
     |> sealv
 
-  let write_error_t =
+  let write_error_t : type a. a Type.t -> a write_error Type.t =
+   fun elt_t ->
     let of_string _ = assert false in
-    Type.like ~cli:(pp_write_error, of_string) write_error_t
+    Type.like ~cli:(pp_write_error elt_t, of_string) (write_error_t elt_t)
 end
+
+module Make_typed (P : S.PRIVATE) = struct end
 
 type S.remote += Store : (module Store_intf.S with type t = 'a) * 'a -> S.remote
 
-module type S = Store_intf.S
+open Store_intf
 
-module type MAKER = Store_intf.MAKER
+module type S = S
+
+module type TYPED = TYPED
+
+module type TYPED_MAKER = TYPED_MAKER
+
+module type UNTYPED = UNTYPED
+
+module type UNTYPED_MAKER = UNTYPED_MAKER

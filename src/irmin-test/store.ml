@@ -1836,7 +1836,9 @@ module Make (S : S) = struct
     in
     run x test
 
-  let pp_write_error = Irmin.Type.pp S.write_error_t
+  let pp_write_tree_error = Irmin.Type.pp S.(write_error_t tree_t)
+
+  let pp_write_string_error = Irmin.Type.pp S.(write_error_t Irmin.Type.string)
 
   let tree_t = testable S.tree_t
 
@@ -1851,20 +1853,22 @@ module Make (S : S) = struct
       in
       let check_ok = function
         | Ok () -> ()
-        | Error e -> Alcotest.failf "%a" pp_write_error e
+        | Error e -> Alcotest.failf "%a" pp_write_tree_error e
       in
-      let check_test e = function
+      let check_tree_test e = function
         | Error (`Test_was e') ->
             Alcotest.(check (option tree_t)) "test-was" e e'
         | Ok () -> Alcotest.fail "error expected"
         | Error e ->
-            Alcotest.failf "an other error was expected: %a" pp_write_error e
+            Alcotest.failf "an other error was expected: %a" pp_write_tree_error
+              e
       in
       let check_conflict = function
         | Error (`Conflict _) -> ()
         | Ok () -> Alcotest.fail "error expected"
         | Error e ->
-            Alcotest.failf "an other error was expected: %a" pp_write_error e
+            Alcotest.failf "an other error was expected: %a" pp_write_tree_error
+              e
       in
       let set () =
         let rx = Lwt_mvar.create_empty () in
@@ -1905,7 +1909,7 @@ module Make (S : S) = struct
               Alcotest.(check string) "test-and-set x" "1" a;
               Lwt_mvar.put ry "2" >>= fun () ->
               Lwt_mvar.take wy >>= fun e ->
-              check_test (Some (`Contents ("1", S.Metadata.default))) e;
+              check_tree_test (Some (`Contents ("1", S.Metadata.default))) e;
               S.get t [ "a" ] >>= fun a ->
               Alcotest.(check string) "test-and-set y" "1" a;
               Lwt_mvar.put rz "3" >>= fun () ->

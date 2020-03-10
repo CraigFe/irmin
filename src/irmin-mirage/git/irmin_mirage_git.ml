@@ -109,13 +109,13 @@ module KV_RO (G : Git.S) = struct
 
   let disconnect _ = Lwt.return_unit
 
-  type error = [ Mirage_kv.error | S.write_error ]
+  type 'v error = [ Mirage_kv.error | 'v S.write_error ]
 
-  let pp_error ppf = function
+  let pp_error pp_write_val ppf = function
     | #Mirage_kv.error as e -> Mirage_kv.pp_error ppf e
-    | #S.write_error as e -> Irmin.Type.pp S.write_error_t ppf e
+    | #S.write_error as e -> Irmin.Type.pp S.(write_error_t pp_write_val) ppf e
 
-  let err e : ('a, error) result = Error e
+  let err e : ('a, 'b error) result = Error e
 
   let err_not_found k = err (`Not_found k)
 
@@ -247,7 +247,7 @@ module KV_RW (G : Irmin_git.G) (C : Mirage_clock.PCLOCK) = struct
 
   type key = RO.key
 
-  type error = RO.error
+  type 'a error = 'a RO.error
 
   let pp_error = RO.pp_error
 
@@ -292,14 +292,15 @@ module KV_RW (G : Irmin_git.G) (C : Mirage_clock.PCLOCK) = struct
 
   let list t k = tree t >>= fun t -> Tree.list t k
 
-  type write_error = [ RO.error | Mirage_kv.write_error | RO.Sync.push_error ]
+  type 'a write_error =
+    [ 'a RO.error | Mirage_kv.write_error | RO.Sync.push_error ]
 
   let write_error = function
     | Ok _ -> Ok ()
-    | Error e -> Error (e :> write_error)
+    | Error e -> Error (e :> 'a write_error)
 
-  let pp_write_error ppf = function
-    | #RO.error as e -> RO.pp_error ppf e
+  let pp_write_error pp_contents ppf = function
+    | #RO.error as e -> RO.pp_error pp_contents ppf e
     | #RO.Sync.push_error as e -> RO.Sync.pp_push_error ppf e
     | #Mirage_kv.write_error as e -> Mirage_kv.pp_write_error ppf e
 
@@ -313,7 +314,7 @@ module KV_RW (G : Irmin_git.G) (C : Mirage_clock.PCLOCK) = struct
     | Store s -> (
         S.set ~info s.t (path k) v >>= function
         | Ok _ -> RO.Sync.push s.t t.remote >|= write_error
-        | Error e -> Lwt.return_error (e :> write_error) )
+        | Error e -> Lwt.return_error (e :> 'a write_error) )
     | Batch b ->
         S.Tree.add b.tree (path k) v >|= fun tree ->
         b.tree <- tree;
@@ -325,7 +326,7 @@ module KV_RW (G : Irmin_git.G) (C : Mirage_clock.PCLOCK) = struct
     | Store s -> (
         S.remove ~info s.t (path k) >>= function
         | Ok _ -> RO.Sync.push s.t t.remote >|= write_error
-        | Error e -> Lwt.return_error (e :> write_error) )
+        | Error e -> Lwt.return_error (e :> 'a write_error) )
     | Batch b ->
         S.Tree.remove b.tree (path k) >|= fun tree ->
         b.tree <- tree;

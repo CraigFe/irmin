@@ -267,7 +267,7 @@ struct
     end
   end
 
-  include Store.Make (X)
+  include Store.Make_untyped (X)
 end
 
 module Make
@@ -284,7 +284,7 @@ struct
   include Make_ext (CA) (AW) (M) (C) (P) (B) (H) (N) (CT)
 end
 
-module Of_private = Store.Make
+module Of_private = Store.Make_untyped
 
 module type CONTENT_ADDRESSABLE_STORE = S.CONTENT_ADDRESSABLE_STORE
 
@@ -294,7 +294,7 @@ module type ATOMIC_WRITE_STORE = S.ATOMIC_WRITE_STORE
 
 module type TREE = S.TREE
 
-module type S = Store.S
+module type S = Store.UNTYPED
 
 type config = Conf.t
 
@@ -306,7 +306,9 @@ module type APPEND_ONLY_STORE_MAKER = S.APPEND_ONLY_STORE_MAKER
 
 module type ATOMIC_WRITE_STORE_MAKER = S.ATOMIC_WRITE_STORE_MAKER
 
-module type S_MAKER = Store.MAKER
+module type S_MAKER = Store.UNTYPED_MAKER
+
+module type TYPED_MAKER = Store.TYPED_MAKER
 
 module type KV =
   S with type key = string list and type step = string and type branch = string

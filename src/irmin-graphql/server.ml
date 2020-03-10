@@ -396,8 +396,11 @@ struct
 
   let _ = Lazy.force contents_as_node
 
-  let err_write e =
-    Lwt.return_error (Irmin.Type.to_string Store.write_error_t e)
+  let err_write_contents e =
+    Lwt.return_error (Irmin.Type.to_string Store.(write_error_t contents_t) e)
+
+  let err_write_tree e =
+    Lwt.return_error (Irmin.Type.to_string Store.(write_error_t tree_t) e)
 
   let remote s =
     match Config.remote with
@@ -485,7 +488,7 @@ struct
             txn_args s i >>= fun (info, retries, allow_empty, parents) ->
             Store.set t ?retries ?allow_empty ?parents k v ~info >>= function
             | Ok () -> Store.Head.find t >>= Lwt.return_ok
-            | Error e -> err_write e);
+            | Error e -> err_write_contents e);
         io_field "set_tree" ~typ:(Lazy.force commit)
           ~args:
             Arg.
@@ -505,9 +508,7 @@ struct
                 Store.set_tree t ?retries ?allow_empty ?parents ~info k tree
                 >>= function
                 | Ok _ -> Store.Head.find t >>= Lwt.return_ok
-                | Error e ->
-                    Lwt.return_error
-                      (Irmin.Type.to_string Store.write_error_t e))
+                | Error e -> err_write_contents e)
               (function Failure e -> Lwt.return_error e | e -> raise e));
         io_field "update_tree" ~typ:(Lazy.force commit)
           ~args:
@@ -531,9 +532,7 @@ struct
                     to_tree tree items >>= Lwt.return_some)
                 >>= function
                 | Ok _ -> Store.Head.find t >>= Lwt.return_ok
-                | Error e ->
-                    Lwt.return_error
-                      (Irmin.Type.to_string Store.write_error_t e))
+                | Error e -> err_write_tree e)
               (function Failure e -> Lwt.return_error e | e -> raise e));
         io_field "set_all" ~typ:(Lazy.force commit)
           ~args:
@@ -556,7 +555,7 @@ struct
             Store.set_tree t ?retries ?allow_empty ?parents k tree ~info
             >>= function
             | Ok () -> Store.Head.find t >>= Lwt.return_ok
-            | Error e -> err_write e);
+            | Error e -> err_write_contents e);
         io_field "test_and_set" ~typ:(Lazy.force commit)
           ~args:
             Arg.
@@ -574,7 +573,7 @@ struct
               ~set
             >>= function
             | Ok _ -> Store.Head.find t >>= Lwt.return_ok
-            | Error e -> err_write e);
+            | Error e -> err_write_tree e);
         io_field "test_and_set_branch" ~typ:(non_null bool)
           ~args:
             Arg.
@@ -600,7 +599,7 @@ struct
             txn_args s i >>= fun (info, retries, allow_empty, parents) ->
             Store.remove t ?retries ?allow_empty ?parents key ~info >>= function
             | Ok () -> Store.Head.find t >>= Lwt.return_ok
-            | Error e -> err_write e);
+            | Error e -> err_write_contents e);
         io_field "merge" ~typ:Types.Hash.schema_typ
           ~args:
             Arg.
@@ -617,8 +616,7 @@ struct
             Store.merge t key ~info ?retries ?allow_empty ?parents ~old value
             >>= function
             | Ok _ -> Store.hash t key >>= Lwt.return_ok
-            | Error e ->
-                Lwt.return_error (Irmin.Type.to_string Store.write_error_t e));
+            | Error e -> err_write_tree e);
         io_field "merge_tree" ~typ:(Lazy.force commit)
           ~args:
             Arg.
@@ -648,8 +646,7 @@ struct
               value
             >>= function
             | Ok _ -> Store.Head.find t >>= Lwt.return_ok
-            | Error e ->
-                Lwt.return_error (Irmin.Type.to_string Store.write_error_t e));
+            | Error e -> err_write_tree e);
         io_field "merge_with_branch" ~typ:(Lazy.force commit)
           ~args:
             Arg.

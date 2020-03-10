@@ -1,5 +1,35 @@
 module Sigs = S
 
+module type COMMIT = sig
+  type repo
+
+  type hash
+
+  type t
+  (** The type for store commits. *)
+
+  val t : repo -> t Type.t
+  (** [t] is the value type for {!t}. *)
+
+  val pp_hash : t Fmt.t
+  (** [pp] is the pretty-printer for commit. Display only the hash. *)
+
+  val parents : t -> hash list
+  (** [parents c] are [c]'s parents. *)
+
+  val info : t -> Info.t
+  (** [info c] is [c]'s info. *)
+
+  (** {1 Import/Export} *)
+
+  val hash : t -> hash
+  (** [hash c] it [c]'s hash. *)
+
+  val of_hash : repo -> hash -> t option Lwt.t
+  (** [of_hash r h] is the the commit object in [r] having [h] as hash, or
+      [None] is no such commit object exists. *)
+end
+
 module type S = sig
   (** {1 Irmin stores}
 
@@ -22,23 +52,11 @@ module type S = sig
   type t
   (** The type for Irmin stores. *)
 
-  type step
-  (** The type for {!key} steps. *)
-
-  type key
-  (** The type for store keys. A key is a sequence of {!step}s. *)
-
   type metadata
   (** The type for store metadata. *)
 
-  type contents
-  (** The type for store contents. *)
-
   type node
   (** The type for store nodes. *)
-
-  type tree = [ `Node of node | `Contents of contents * metadata ]
-  (** The type for store trees. *)
 
   type hash
   (** The type for object hashes. *)
@@ -59,6 +77,16 @@ module type S = sig
 
   type ff_error = [ `No_change | `Rejected | lca_error ]
   (** The type for errors for {!fast_forward}. *)
+
+  type 'a write_error =
+    [ Merge.conflict | `Too_many_retries of int | `Test_was of 'a option ]
+  (** The type for write errors.
+
+      - Merge conflict.
+      - Concurrent transactions are competing to get the current operation
+        committed and too many attemps have been tried (livelock).
+      - A "test and set" operation has failed and the current value is [v]
+        instead of the one we were waiting for. *)
 
   (** Repositories. *)
   module Repo : sig
@@ -132,10 +160,6 @@ module type S = sig
 
   val repo : t -> repo
   (** [repo t] is the repository containing [t]. *)
-
-  val tree : t -> tree Lwt.t
-  (** [tree t] is [t]'s current tree. Contents is not allowed at the root of the
-      tree. *)
 
   module Status : sig
     type t = [ `Empty | `Branch of branch | `Commit of commit ]
@@ -212,373 +236,6 @@ module type S = sig
   module Hash : S.HASH with type t = hash
   (** Object hashes. *)
 
-  (** [Commit] defines immutable objects to describe store updates. *)
-  module Commit : sig
-    type t = commit
-    (** The type for store commits. *)
-
-    val t : repo -> t Type.t
-    (** [t] is the value type for {!t}. *)
-
-    val pp_hash : t Fmt.t
-    (** [pp] is the pretty-printer for commit. Display only the hash. *)
-
-    val v : repo -> info:Info.t -> parents:hash list -> tree -> commit Lwt.t
-    (** [v r i ~parents:p t] is the commit [c] such that:
-
-        - [info c = i]
-        - [parents c = p]
-        - [tree c = t] *)
-
-    val tree : commit -> tree
-    (** [tree c] is [c]'s root tree. *)
-
-    val parents : commit -> hash list
-    (** [parents c] are [c]'s parents. *)
-
-    val info : commit -> Info.t
-    (** [info c] is [c]'s info. *)
-
-    (** {1 Import/Export} *)
-
-    val hash : commit -> hash
-    (** [hash c] it [c]'s hash. *)
-
-    val of_hash : repo -> hash -> commit option Lwt.t
-    (** [of_hash r h] is the the commit object in [r] having [h] as hash, or
-        [None] is no such commit object exists. *)
-  end
-
-  (** [Contents] provides base functions for the store's contents. *)
-  module Contents : sig
-    include S.CONTENTS with type t = contents
-
-    (** {1 Import/Export} *)
-
-    val hash : contents -> hash
-    (** [hash c] it [c]'s hash in the repository [r]. *)
-
-    val of_hash : repo -> hash -> contents option Lwt.t
-    (** [of_hash r h] is the the contents object in [r] having [h] as hash, or
-        [None] is no such contents object exists. *)
-  end
-
-  (** Managing store's trees. *)
-  module Tree : sig
-    include
-      S.TREE
-        with type step := step
-         and type key := key
-         and type metadata := metadata
-         and type contents := contents
-         and type node := node
-         and type tree := tree
-
-    (** {1 Import/Export} *)
-
-    val hash : tree -> hash
-    (** [hash r c] it [c]'s hash in the repository [r]. *)
-
-    val of_hash : Repo.t -> hash -> tree option Lwt.t
-    (** [of_hash r h] is the the tree object in [r] having [h] as hash, or
-        [None] is no such tree object exists. *)
-
-    val shallow : Repo.t -> hash -> tree
-    (** [shallow r h] is the shallow tree object with the hash [h]. No check is
-        performed to verify if [h] actually exists in [r]. *)
-  end
-
-  (** {1 Reads} *)
-
-  val kind : t -> key -> [ `Contents | `Node ] option Lwt.t
-  (** [kind] is {!Tree.kind} applied to [t]'s root tree. *)
-
-  val list : t -> key -> (step * [ `Contents | `Node ]) list Lwt.t
-  (** [list t] is {!Tree.list} applied to [t]'s root tree. *)
-
-  val mem : t -> key -> bool Lwt.t
-  (** [mem t] is {!Tree.mem} applied to [t]'s root tree. *)
-
-  val mem_tree : t -> key -> bool Lwt.t
-  (** [mem_tree t] is {!Tree.mem_tree} applied to [t]'s root tree. *)
-
-  val find_all : t -> key -> (contents * metadata) option Lwt.t
-  (** [find_all t] is {!Tree.find_all} applied to [t]'s root tree. *)
-
-  val find : t -> key -> contents option Lwt.t
-  (** [find t] is {!Tree.find} applied to [t]'s root tree. *)
-
-  val get_all : t -> key -> (contents * metadata) Lwt.t
-  (** [get_all t] is {!Tree.get_all} applied on [t]'s root tree. *)
-
-  val get : t -> key -> contents Lwt.t
-  (** [get t] is {!Tree.get} applied to [t]'s root tree. *)
-
-  val find_tree : t -> key -> tree option Lwt.t
-  (** [find_tree t] is {!Tree.find_tree} applied to [t]'s root tree. *)
-
-  val get_tree : t -> key -> tree Lwt.t
-  (** [get_tree t k] is {!Tree.get_tree} applied to [t]'s root tree. *)
-
-  val hash : t -> key -> hash option Lwt.t
-  (** [hash t k] *)
-
-  (** {1 Udpates} *)
-
-  type write_error =
-    [ Merge.conflict | `Too_many_retries of int | `Test_was of tree option ]
-  (** The type for write errors.
-
-      - Merge conflict.
-      - Concurrent transactions are competing to get the current operation
-        committed and too many attemps have been tried (livelock).
-      - A "test and set" operation has failed and the current value is [v]
-        instead of the one we were waiting for. *)
-
-  val set :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    t ->
-    key ->
-    contents ->
-    (unit, write_error) result Lwt.t
-  (** [set t k ~info v] sets [k] to the value [v] in [t]. Discard any previous
-      results but ensure that no operation is lost in the history.
-
-      This function always uses {!Metadata.default} as metadata. Use {!set_tree}
-      with `[Contents (c, m)] for different ones.
-
-      The result is [Error `Too_many_retries] if the concurrent operations do
-      not allow the operation to commit to the underlying storage layer
-      (livelock). *)
-
-  val set_exn :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    t ->
-    key ->
-    contents ->
-    unit Lwt.t
-  (** [set_exn] is like {!set} but raise [Failure _] instead of using a result
-      type. *)
-
-  val set_tree :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    t ->
-    key ->
-    tree ->
-    (unit, write_error) result Lwt.t
-  (** [set_tree] is like {!set} but for trees. *)
-
-  val set_tree_exn :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    t ->
-    key ->
-    tree ->
-    unit Lwt.t
-  (** [set_tree] is like {!set_exn} but for trees. *)
-
-  val remove :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    t ->
-    key ->
-    (unit, write_error) result Lwt.t
-  (** [remove t ~info k] remove any bindings to [k] in [t].
-
-      The result is [Error `Too_many_retries] if the concurrent operations do
-      not allow the operation to commit to the underlying storage layer
-      (livelock). *)
-
-  val remove_exn :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    t ->
-    key ->
-    unit Lwt.t
-  (** [remove_exn] is like {!remove} but raise [Failure _] instead of a using
-      result type. *)
-
-  val test_and_set :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    t ->
-    key ->
-    test:contents option ->
-    set:contents option ->
-    (unit, write_error) result Lwt.t
-  (** [test_and_set ~test ~set] is like {!set} but it atomically checks that the
-      tree is [test] before modifying it to [set].
-
-      This function always uses {!Metadata.default} as metadata. Use
-      {!test_and_set_tree} with `[Contents (c, m)] for different ones.
-
-      The result is [Error (`Test t)] if the current tree is [t] instead of
-      [test].
-
-      The result is [Error `Too_many_retries] if the concurrent operations do
-      not allow the operation to commit to the underlying storage layer
-      (livelock). *)
-
-  val test_and_set_exn :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    t ->
-    key ->
-    test:contents option ->
-    set:contents option ->
-    unit Lwt.t
-  (** [test_and_set_exn] is like {!test_and_set} but raise [Failure _] instead
-      of using a result type. *)
-
-  val test_and_set_tree :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    t ->
-    key ->
-    test:tree option ->
-    set:tree option ->
-    (unit, write_error) result Lwt.t
-  (** [test_and_set_tree] is like {!test_and_set} but for trees. *)
-
-  val test_and_set_tree_exn :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    t ->
-    key ->
-    test:tree option ->
-    set:tree option ->
-    unit Lwt.t
-  (** [test_and_set_tree_exn] is like {!test_and_set_exn} but for trees. *)
-
-  val merge :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    old:contents option ->
-    t ->
-    key ->
-    contents option ->
-    (unit, write_error) result Lwt.t
-  (** [merge ~old] is like {!set} but merge the current tree and the new tree
-      using [old] as ancestor in case of conflicts.
-
-      This function always uses {!Metadata.default} as metadata. Use
-      {!merge_tree} with `[Contents (c, m)] for different ones.
-
-      The result is [Error (`Conflict c)] if the merge failed with the conflict
-      [c].
-
-      The result is [Error `Too_many_retries] if the concurrent operations do
-      not allow the operation to commit to the underlying storage layer
-      (livelock). *)
-
-  val merge_exn :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    old:contents option ->
-    t ->
-    key ->
-    contents option ->
-    unit Lwt.t
-  (** [merge_exn] is like {!merge} but raise [Failure _] instead of using a
-      result type. *)
-
-  val merge_tree :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    old:tree option ->
-    t ->
-    key ->
-    tree option ->
-    (unit, write_error) result Lwt.t
-  (** [merge_tree] is like {!merge_tree} but for trees. *)
-
-  val merge_tree_exn :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    info:Info.f ->
-    old:tree option ->
-    t ->
-    key ->
-    tree option ->
-    unit Lwt.t
-  (** [merge_tree] is like {!merge_tree} but for trees. *)
-
-  val with_tree :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    ?strategy:[ `Set | `Test_and_set | `Merge ] ->
-    info:Info.f ->
-    t ->
-    key ->
-    (tree option -> tree option Lwt.t) ->
-    (unit, write_error) result Lwt.t
-  (** [with_tree t k ~info f] replaces {i atomically} the subtree [v] under [k]
-      in the store [t] by the contents of the tree [f v], using the commit info
-      [info ()].
-
-      If [v = f v] and [allow_empty] is unset (default) then, the operation is a
-      no-op.
-
-      If [v != f v] and no other changes happen concurrently, [f v] becomes the
-      new subtree under [k]. If other changes happen concurrently to that
-      operations, the semantics depend on the value of [strategy]:
-
-      - if [strategy = `Set], use {!set} and discard any concurrent updates to
-        [k].
-      - if [strategy = `Test_and_set] (default), use {!test_and_set} and ensure
-        that no concurrent operations are updating [k].
-      - if [strategy = `Merge], use {!merge} and ensure that concurrent updates
-        and merged with the values present at the beginning of the transaction.
-
-      {b Note:} Irmin transactions provides
-      {{:https://en.wikipedia.org/wiki/Snapshot_isolation} snapshot isolation}
-      guarantees: reads and writes are isolated in every transaction, but only
-      write conflicts are visible on commit. *)
-
-  val with_tree_exn :
-    ?retries:int ->
-    ?allow_empty:bool ->
-    ?parents:commit list ->
-    ?strategy:[ `Set | `Test_and_set | `Merge ] ->
-    info:Info.f ->
-    t ->
-    key ->
-    (tree option -> tree option Lwt.t) ->
-    unit Lwt.t
-  (** [with_tree_exn] is like {!with_tree} but raise [Failure _] instead of
-      using a return type. *)
-
   (** {1 Clones} *)
 
   val clone : src:t -> dst:branch -> t Lwt.t
@@ -596,16 +253,6 @@ module type S = sig
       {b Note:} even if [f] might skip some head updates, it will never be
       called concurrently: all consecutive calls to [f] are done in sequence, so
       we ensure that the previous one ended before calling the next one. *)
-
-  val watch_key :
-    t ->
-    key ->
-    ?init:commit ->
-    ((commit * tree) S.diff -> unit Lwt.t) ->
-    watch Lwt.t
-  (** [watch_key t key f] calls [f] every time the [key]'s value is added,
-      removed or updated. If the current branch is deleted, no signal is sent to
-      the watcher. *)
 
   val unwatch : watch -> unit Lwt.t
   (** [unwatch w] disable [w]. Return once the [w] is fully disabled. *)
@@ -658,6 +305,10 @@ module type S = sig
     (commit list, lca_error) result Lwt.t
   (** Same as {!lcas} but takes a commit ID as argument. *)
 
+  (** [Commit] defines immutable objects to describe store updates. *)
+  module Commit :
+    COMMIT with type t = commit and type repo := repo and type hash := hash
+
   (** {1 History} *)
 
   module History : Graph.Sig.P with type V.t = commit
@@ -668,12 +319,6 @@ module type S = sig
   (** [history ?depth ?min ?max t] is a view of the history of the store [t], of
       depth at most [depth], starting from the [t]'s head (or from [max] if the
       head is not set) and stopping at [min] if specified. *)
-
-  val last_modified : ?depth:int -> ?n:int -> t -> key -> commit list Lwt.t
-  (** [last_modified ?number c k] is the list of the last [number] commits that
-      modified [key], in ascending order of date. [depth] is the maximum depth
-      to be explored in the commit graph, if any. Default value for [number] is
-      1. *)
 
   (** Manipulate branches. *)
   module Branch : sig
@@ -722,31 +367,16 @@ module type S = sig
     (** Base functions for branches. *)
   end
 
-  (** [Key] provides base functions for the stores's paths. *)
-  module Key : S.PATH with type t = key and type step = step
-
   module Metadata : S.METADATA with type t = metadata
   (** [Metadata] provides base functions for node metadata. *)
 
   (** {1 Value Types} *)
 
-  val step_t : step Type.t
-  (** [step_t] is the value type for {!step}. *)
-
-  val key_t : key Type.t
-  (** [key_t] is the value type for {!key}. *)
-
   val metadata_t : metadata Type.t
   (** [metadata_t] is the value type for {!metadata}. *)
 
-  val contents_t : contents Type.t
-  (** [contents_t] is the value type for {!contents}. *)
-
   val node_t : node Type.t
   (** [node_t] is the value type for {!node}. *)
-
-  val tree_t : tree Type.t
-  (** [tree_t] is the value type for {!tree}. *)
 
   val commit_t : repo -> commit Type.t
   (** [commit_t r] is the value type for {!commit}. *)
@@ -766,16 +396,14 @@ module type S = sig
   val ff_error_t : ff_error Type.t
   (** [ff_error_t] is the value type for {!ff_error}. *)
 
-  val write_error_t : write_error Type.t
+  val write_error_t : 'a Type.t -> 'a write_error Type.t
   (** [write_error_t] is the value type for {!write_error}. *)
 
   (** Private functions, which might be used by the backends. *)
   module Private : sig
     include
       S.PRIVATE
-        with type Contents.value = contents
-         and module Hash = Hash
-         and module Node.Path = Key
+        with module Hash = Hash
          and type Node.Metadata.t = metadata
          and type Branch.key = branch
          and type Slice.t = slice
@@ -799,6 +427,400 @@ module type S = sig
   val of_private_commit : repo -> Private.Commit.value -> commit
   (** [of_private_commit r c] is the commit associated with the private commit
       object [c]. *)
+end
+
+(** Stores with a single content type *)
+module type UNTYPED = sig
+  type step
+  (** The type for {!key} steps. *)
+
+  val step_t : step Type.t
+  (** [step_t] is the value type for {!step}. *)
+
+  type key
+  (** The type for store keys. A key is a sequence of {!step}s. *)
+
+  val key_t : key Type.t
+  (** [key_t] is the value type for {!key}. *)
+
+  (** [Key] provides base functions for the stores's paths. *)
+  module Key : S.PATH with type t = key and type step = step
+
+  type contents
+  (** The type for store contents. *)
+
+  val contents_t : contents Type.t
+  (** [contents_t] is the value type for {!contents}. *)
+
+  include
+    S
+      with type Private.Contents.value = contents
+       and module Private.Node.Path = Key
+
+  type tree = [ `Node of node | `Contents of contents * metadata ]
+  (** The type for store trees. *)
+
+  val tree_t : tree Type.t
+  (** [tree_t] is the value type for {!tree}. *)
+
+  module Commit : sig
+    include
+      COMMIT with type t = commit and type repo := repo and type hash := hash
+
+    val v : repo -> info:Info.t -> parents:hash list -> tree -> commit Lwt.t
+    (** [v r i ~parents:p t] is the commit [c] such that:
+
+        - [info c = i]
+        - [parents c = p]
+        - [tree c = t] *)
+
+    val tree : commit -> tree
+    (** [tree c] is [c]'s root tree. *)
+  end
+
+  (** [Contents] provides base functions for the store's contents. *)
+  module Contents : sig
+    include S.CONTENTS with type t = contents
+
+    (** {1 Import/Export} *)
+
+    val hash : contents -> hash
+    (** [hash c] it [c]'s hash in the repository [r]. *)
+
+    val of_hash : repo -> hash -> contents option Lwt.t
+    (** [of_hash r h] is the the contents object in [r] having [h] as hash, or
+        [None] is no such contents object exists. *)
+  end
+
+  val tree : t -> tree Lwt.t
+  (** [tree t] is [t]'s current tree. Contents is not allowed at the root of the
+      tree. *)
+
+  val watch_key :
+    t ->
+    key ->
+    ?init:commit ->
+    ((commit * tree) S.diff -> unit Lwt.t) ->
+    watch Lwt.t
+  (** [watch_key t key f] calls [f] every time the [key]'s value is added,
+      removed or updated. If the current branch is deleted, no signal is sent to
+      the watcher. *)
+
+  (** Managing store's trees. *)
+  module Tree : sig
+    include
+      S.TREE
+        with type step := step
+         and type key := key
+         and type metadata := metadata
+         and type contents := contents
+         and type node := node
+         and type tree := tree
+
+    (** {1 Import/Export} *)
+
+    val hash : tree -> hash
+    (** [hash r c] it [c]'s hash in the repository [r]. *)
+
+    val of_hash : Repo.t -> hash -> tree option Lwt.t
+    (** [of_hash r h] is the the tree object in [r] having [h] as hash, or
+        [None] is no such tree object exists. *)
+
+    val shallow : Repo.t -> hash -> tree
+    (** [shallow r h] is the shallow tree object with the hash [h]. No check is
+        performed to verify if [h] actually exists in [r]. *)
+  end
+
+  (** {1 Untyped history} *)
+
+  val last_modified : ?depth:int -> ?n:int -> t -> key -> commit list Lwt.t
+  (** [last_modified ?number c k] is the list of the last [number] commits that
+      modified [key], in ascending order of date. [depth] is the maximum depth
+      to be explored in the commit graph, if any. Default value for [number] is
+      1. *)
+
+  (** {1 Reads} *)
+
+  val kind : t -> key -> [ `Contents | `Node ] option Lwt.t
+  (** [kind] is {!Tree.kind} applied to [t]'s root tree. *)
+
+  val list : t -> key -> (step * [ `Contents | `Node ]) list Lwt.t
+  (** [list t] is {!Tree.list} applied to [t]'s root tree. *)
+
+  val mem : t -> key -> bool Lwt.t
+  (** [mem t] is {!Tree.mem} applied to [t]'s root tree. *)
+
+  val mem_tree : t -> key -> bool Lwt.t
+  (** [mem_tree t] is {!Tree.mem_tree} applied to [t]'s root tree. *)
+
+  val find_all : t -> key -> (contents * metadata) option Lwt.t
+  (** [find_all t] is {!Tree.find_all} applied to [t]'s root tree. *)
+
+  val find : t -> key -> contents option Lwt.t
+  (** [find t] is {!Tree.find} applied to [t]'s root tree. *)
+
+  val get_all : t -> key -> (contents * metadata) Lwt.t
+  (** [get_all t] is {!Tree.get_all} applied on [t]'s root tree. *)
+
+  val get : t -> key -> contents Lwt.t
+  (** [get t] is {!Tree.get} applied to [t]'s root tree. *)
+
+  val find_tree : t -> key -> tree option Lwt.t
+  (** [find_tree t] is {!Tree.find_tree} applied to [t]'s root tree. *)
+
+  val get_tree : t -> key -> tree Lwt.t
+  (** [get_tree t k] is {!Tree.get_tree} applied to [t]'s root tree. *)
+
+  val hash : t -> key -> hash option Lwt.t
+  (** [hash t k] *)
+
+  (** {1 Updates} *)
+
+  val set :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    t ->
+    key ->
+    contents ->
+    (unit, contents write_error) result Lwt.t
+  (** [set t k ~info v] sets [k] to the value [v] in [t]. Discard any previous
+      results but ensure that no operation is lost in the history.
+
+      This function always uses {!Metadata.default} as metadata. Use {!set_tree}
+      with `[Contents (c, m)] for different ones.
+
+      The result is [Error `Too_many_retries] if the concurrent operations do
+      not allow the operation to commit to the underlying storage layer
+      (livelock). *)
+
+  val set_exn :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    t ->
+    key ->
+    contents ->
+    unit Lwt.t
+  (** [set_exn] is like {!set} but raise [Failure _] instead of using a result
+      type. *)
+
+  val set_tree :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    t ->
+    key ->
+    tree ->
+    (unit, contents write_error) result Lwt.t
+  (** [set_tree] is like {!set} but for trees. *)
+
+  val set_tree_exn :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    t ->
+    key ->
+    tree ->
+    unit Lwt.t
+  (** [set_tree] is like {!set_exn} but for trees. *)
+
+  val remove :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    t ->
+    key ->
+    (unit, contents write_error) result Lwt.t
+  (** [remove t ~info k] remove any bindings to [k] in [t].
+
+      The result is [Error `Too_many_retries] if the concurrent operations do
+      not allow the operation to commit to the underlying storage layer
+      (livelock). *)
+
+  val remove_exn :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    t ->
+    key ->
+    unit Lwt.t
+  (** [remove_exn] is like {!remove} but raise [Failure _] instead of a using
+      result type. *)
+
+  val test_and_set :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    t ->
+    key ->
+    test:contents option ->
+    set:contents option ->
+    (unit, tree write_error) result Lwt.t
+  (** [test_and_set ~test ~set] is like {!set} but it atomically checks that the
+      tree is [test] before modifying it to [set].
+
+      This function always uses {!Metadata.default} as metadata. Use
+      {!test_and_set_tree} with `[Contents (c, m)] for different ones.
+
+      The result is [Error (`Test t)] if the current tree is [t] instead of
+      [test].
+
+      The result is [Error `Too_many_retries] if the concurrent operations do
+      not allow the operation to commit to the underlying storage layer
+      (livelock). *)
+
+  val test_and_set_exn :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    t ->
+    key ->
+    test:contents option ->
+    set:contents option ->
+    unit Lwt.t
+  (** [test_and_set_exn] is like {!test_and_set} but raise [Failure _] instead
+      of using a result type. *)
+
+  val test_and_set_tree :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    t ->
+    key ->
+    test:tree option ->
+    set:tree option ->
+    (unit, tree write_error) result Lwt.t
+  (** [test_and_set_tree] is like {!test_and_set} but for trees. *)
+
+  val test_and_set_tree_exn :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    t ->
+    key ->
+    test:tree option ->
+    set:tree option ->
+    unit Lwt.t
+  (** [test_and_set_tree_exn] is like {!test_and_set_exn} but for trees. *)
+
+  val merge :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    old:contents option ->
+    t ->
+    key ->
+    contents option ->
+    (unit, tree write_error) result Lwt.t
+  (** [merge ~old] is like {!set} but merge the current tree and the new tree
+      using [old] as ancestor in case of conflicts.
+
+      This function always uses {!Metadata.default} as metadata. Use
+      {!merge_tree} with `[Contents (c, m)] for different ones.
+
+      The result is [Error (`Conflict c)] if the merge failed with the conflict
+      [c].
+
+      The result is [Error `Too_many_retries] if the concurrent operations do
+      not allow the operation to commit to the underlying storage layer
+      (livelock). *)
+
+  val merge_exn :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    old:contents option ->
+    t ->
+    key ->
+    contents option ->
+    unit Lwt.t
+  (** [merge_exn] is like {!merge} but raise [Failure _] instead of using a
+      result type. *)
+
+  val merge_tree :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    old:tree option ->
+    t ->
+    key ->
+    tree option ->
+    (unit, tree write_error) result Lwt.t
+  (** [merge_tree] is like {!merge_tree} but for trees. *)
+
+  val merge_tree_exn :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    old:tree option ->
+    t ->
+    key ->
+    tree option ->
+    unit Lwt.t
+  (** [merge_tree] is like {!merge_tree} but for trees. *)
+
+  val with_tree :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    ?strategy:[ `Set | `Test_and_set | `Merge ] ->
+    info:Info.f ->
+    t ->
+    key ->
+    (tree option -> tree option Lwt.t) ->
+    (unit, tree write_error) result Lwt.t
+  (** [with_tree t k ~info f] replaces {i atomically} the subtree [v] under [k]
+      in the store [t] by the contents of the tree [f v], using the commit info
+      [info ()].
+
+      If [v = f v] and [allow_empty] is unset (default) then, the operation is a
+      no-op.
+
+      If [v != f v] and no other changes happen concurrently, [f v] becomes the
+      new subtree under [k]. If other changes happen concurrently to that
+      operations, the semantics depend on the value of [strategy]:
+
+      - if [strategy = `Set], use {!set} and discard any concurrent updates to
+        [k].
+      - if [strategy = `Test_and_set] (default), use {!test_and_set} and ensure
+        that no concurrent operations are updating [k].
+      - if [strategy = `Merge], use {!merge} and ensure that concurrent updates
+        and merged with the values present at the beginning of the transaction.
+
+      {b Note:} Irmin transactions provides
+      {{:https://en.wikipedia.org/wiki/Snapshot_isolation} snapshot isolation}
+      guarantees: reads and writes are isolated in every transaction, but only
+      write conflicts are visible on commit. *)
+
+  val with_tree_exn :
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    ?strategy:[ `Set | `Test_and_set | `Merge ] ->
+    info:Info.f ->
+    t ->
+    key ->
+    (tree option -> tree option Lwt.t) ->
+    unit Lwt.t
+  (** [with_tree_exn] is like {!with_tree} but raise [Failure _] instead of
+      using a return type. *)
+
+  (** {2 Converters to private types} *)
 
   val save_contents : [> `Write ] Private.Contents.t -> contents -> hash Lwt.t
   (** Save a content into the database *)
@@ -814,14 +836,117 @@ module type S = sig
       (it is by default), the tree cache will be cleared after the save. *)
 end
 
-module type MAKER = functor
+module String_list = Path.String_list
+
+(** Stores with multiple content types, indexed by 'smart' paths. *)
+module type TYPED = sig
+  include S
+
+  type root
+  (** The global type of trees in the store. *)
+
+  type ('s, 'a) path
+  (** The type of 'smart' paths from a source type ['s] to an internal component
+      type ['a]. *)
+
+  type 'value key = (root, 'value) path
+  (** A path of type [(root, 'a) path] is a key in the store to a value of type
+      ['value] (which may or may not be present). *)
+
+  module Path : sig
+    type ('s, 'a) t = ('s, 'a) path
+
+    val ( / ) : ('s, 'inner) t -> ('inner, 'a) t -> ('s, 'a) t
+    (** Left-to-right composition of paths. *)
+
+    val compose : ('s, 'inner) t -> ('inner, 'a) t -> ('s, 'a) t
+    (** Non-operator alias of {!( / )}. *)
+  end
+
+  (** {1 Typed history} *)
+
+  val last_modified :
+    ?depth:int -> ?n:int -> t -> 'value key -> commit list Lwt.t
+  (** [last_modified ?number c k] is the list of the last [number] commits that
+      modified [key], in ascending order of date. [depth] is the maximum depth
+      to be explored in the commit graph, if any. Default value for [number] is
+      1. *)
+
+  (** {1 Reads} *)
+
+  val mem : t -> 'value key -> bool Lwt.t
+  (** [mem t k] is true iff [k] is associated to some value in [t]. *)
+
+  val find : t -> 'value key -> 'value option Lwt.t
+  (** [find t k] returns the binding of [k] in [t] (if it exists) *)
+
+  val get : t -> 'value key -> 'value Lwt.t
+  (** [get t k] returns the binding of [k] in [t] (or raises {!Invalid_argument}
+      if no binding exists). *)
+
+  (** {1 Updates} *)
+
+  type 'a with_write_options =
+    ?retries:int ->
+    ?allow_empty:bool ->
+    ?parents:commit list ->
+    info:Info.f ->
+    'a
+
+  val set :
+    (t -> 'value key -> 'value -> (unit, 'value write_error) result Lwt.t)
+    with_write_options
+
+  val set_exn : (t -> 'value key -> 'value -> unit Lwt.t) with_write_options
+
+  val remove :
+    (t -> 'value key -> (unit, 'value write_error) result Lwt.t)
+    with_write_options
+
+  val remove_exn : (t -> 'value key -> unit Lwt.t) with_write_options
+
+  val test_and_set :
+    (t ->
+    'value key ->
+    test:'value option ->
+    set:'value option ->
+    (unit, 'value write_error) result Lwt.t)
+    with_write_options
+
+  val test_and_set_exn :
+    (t -> 'value key -> test:'value option -> set:'value option -> unit Lwt.t)
+    with_write_options
+
+  val merge :
+    (old:'value option ->
+    t ->
+    'value key ->
+    'value option ->
+    (unit, 'value write_error) result Lwt.t)
+    with_write_options
+
+  val merge_exn :
+    (old:'a option -> t -> 'a key -> 'a option -> unit Lwt.t) with_write_options
+  (** [merge_exn] is like {!merge} but raise [Failure _] instead of using a
+      result type. *)
+
+  val modify :
+    (?strategy:[ `Set | `Test_and_set | `Merge ] ->
+    t ->
+    'value key ->
+    ('value option -> 'value option Lwt.t) ->
+    (unit, 'value write_error) result Lwt.t)
+    with_write_options
+end
+
+module type UNTYPED_MAKER = functor
   (M : S.METADATA)
   (C : S.CONTENTS)
   (P : S.PATH)
   (B : S.BRANCH)
   (H : S.HASH)
   ->
-  S
+  UNTYPED
     with type key = P.t
      and type step = P.step
      and type metadata = M.t
@@ -829,15 +954,33 @@ module type MAKER = functor
      and type branch = B.t
      and type hash = H.t
 
+module type TYPED_MAKER = functor
+  (M : S.METADATA)
+  (Type : Type.S)
+  (B : S.BRANCH)
+  (H : S.HASH)
+  ->
+  TYPED
+    with type metadata = M.t
+     and type root = Type.t
+     and type branch = B.t
+     and type hash = H.t
+
 module type Store = sig
   module type S = S
 
-  module type MAKER = MAKER
+  module type TYPED = TYPED
+
+  module type TYPED_MAKER = TYPED_MAKER
+
+  module type UNTYPED = UNTYPED
+
+  module type UNTYPED_MAKER = UNTYPED_MAKER
 
   type Sigs.remote += Store : (module S with type t = 'a) * 'a -> Sigs.remote
 
-  module Make (P : Sigs.PRIVATE) :
-    S
+  module Make_untyped (P : Sigs.PRIVATE) :
+    UNTYPED
       with type key = P.Node.Path.t
        and type contents = P.Contents.value
        and type branch = P.Branch.key

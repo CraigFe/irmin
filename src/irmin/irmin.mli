@@ -501,7 +501,7 @@ exception Closed
 
 (** Irmin stores. *)
 module type S = sig
-  include Store.S
+  include Store.UNTYPED
   (** @inline *)
 end
 
@@ -528,25 +528,14 @@ module Json_tree (Store : S with type contents = Contents.json) : sig
   (** Project a [json] value onto a store at the given key. *)
 end
 
+module type S_MAKER = Store.UNTYPED_MAKER
 (** [S_MAKER] is the signature exposed by any backend providing {!S}
     implementations. [M] is the implementation of user-defined metadata, [C] is
     the one for user-defined contents, [B] is the implementation for branches
     and [H] is the implementation for object (blobs, trees, commits) hashes. It
     does not use any native synchronization primitives. *)
-module type S_MAKER = functor
-  (M : Metadata.S)
-  (C : Contents.S)
-  (P : Path.S)
-  (B : Branch.S)
-  (H : Hash.S)
-  ->
-  S
-    with type key = P.t
-     and type step = P.step
-     and type metadata = M.t
-     and type contents = C.t
-     and type branch = B.t
-     and type hash = H.t
+
+module type TYPED_MAKER = Store.TYPED_MAKER
 
 (** [KV] is similar to {!S} but chooses sensible implementations for path and
     branch. *)
