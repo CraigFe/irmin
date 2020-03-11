@@ -206,7 +206,101 @@ let test_pp_ty () =
   test "custom like prim" Custom.like_prim "Custom (Prim Int)";
   test "custom like custom" Custom.like_custom "Custom (Custom (-))";
   test "map" Custom.map "Map (Prim Int)";
+  ()
 
+(** Test the behaviour of {!Irmin.Type.to_string}. *)
+let test_to_string () =
+  let test : type a. string -> a T.t -> a -> string -> unit =
+   fun case_name typ input expected_output ->
+    let assertion =
+      Fmt.strf "Expected output of `to_string` for representation of `%s`"
+        case_name
+    in
+    T.to_string typ input |> Alcotest.(check string) assertion expected_output
+  in
+
+  (* Test cases for basic types *)
+  test "unit" T.unit () "";
+  test "bool{true}" T.bool true "true";
+  test "bool{false}" T.bool false "false";
+  test "char" T.char 'a' "a";
+  test "int" T.int (-100) "-100";
+  test "int32" T.int32 Int32.max_int "2147483647";
+  test "int64" T.int64 Int64.max_int "9223372036854775807";
+  test "float" T.float (-1.5) "-1.5";
+  test "float{NaN}" T.float Float.nan "nan";
+  test "bytes" T.bytes (Bytes.make 5 'a') "aaaaa";
+  test "string" T.string "foo\nbar\\" "foo\nbar\\";
+
+  (* Test cases for non-algebraic combinators *)
+  test "int list{nil}" T.(list int) [] "[]";
+  test "int list{cons}" T.(list int) [ 1; 2; 3 ] "[1,2,3]";
+  test "float array"
+    T.(array float)
+    [|
+      Float.neg_infinity;
+      Float.(neg zero);
+      Float.zero;
+      Float.epsilon;
+      Float.infinity;
+      Float.nan;
+    |]
+    "[-inf,-0,0,2.220446049250313e-16,inf,nan]";
+  test "(unit * int)" T.(pair unit int) ((), 1) "[null,1]";
+  test "unit option{some}" T.(option unit) (Some ()) "null";
+  test "int option{none}" T.(option unit) None "null";
+  test "(int * string * bool)"
+    T.(triple int string bool)
+    (1, "foo", true) "[1,\"foo\",1]";
+  test "(string, bool) result{ok}"
+    T.(result string bool)
+    (Ok "foo") "{\"ok\":\"foo\"}";
+  test "(string, bool) result{error}"
+    T.(result string bool)
+    (Error false) "{\"error\":0}";
+
+  (* Test cases for algebraic combinators *)
+  let module Algebraic = struct
+    (* Dummy algebraic types and corresponding generics *)
+
+    type my_enum = Alpha | Beta | Gamma | Delta [@@deriving irmin]
+
+    type my_variant = Left of int | Right of int list [@@deriving irmin]
+
+    type my_recursive_variant =
+      | Branch of my_recursive_variant list
+      | Leaf of int
+    [@@deriving irmin]
+
+    type my_record = { foo : int; flag : bool; letter : my_enum }
+    [@@deriving irmin]
+  end in
+  let open Algebraic in
+  test "enum" my_enum_t Alpha "\"Alpha\"";
+  test "variant" my_variant_t (Right [ 1; 2 ]) "{\"Right\":[1,2]}";
+  test "recursive variant" my_recursive_variant_t
+    (Branch [ Branch [ Leaf 1 ]; Leaf 2 ])
+    "{\"Branch\":[{\"Branch\":[{\"Leaf\":1}]},{\"Leaf\":2}]}";
+  test "record" my_record_t
+    { foo = 2; flag = false; letter = Delta }
+    "{\"foo\":2,\"flag\":0,\"letter\":\"Delta\"}";
+
+  (* Test cases for algebraic combinators *)
+  let module Algebraic = struct
+    (* Dummy algebraic types and corresponding generics *)
+
+    type my_enum = Alpha | Beta | Gamma | Delta [@@deriving irmin]
+
+    type my_variant = Left of int | Right of int list [@@deriving irmin]
+
+    type my_recursive_variant =
+      | Branch of my_recursive_variant list
+      | Leaf of int
+    [@@deriving irmin]
+
+    type my_record = { foo : int; flag : bool; letter : my_enum }
+    [@@deriving irmin]
+  end in
   ()
 
 let x = T.like ~compare:(fun x y -> y - x - 1) T.int
@@ -508,6 +602,7 @@ let suite =
         ("json", `Quick, test_json);
         ("bin", `Quick, test_bin);
         ("pp_ty", `Quick, test_pp_ty);
+        ("to_string", `Quick, test_to_string);
         ("compare", `Quick, test_compare);
         ("equal", `Quick, test_equal);
         ("ints", `Quick, test_int);
