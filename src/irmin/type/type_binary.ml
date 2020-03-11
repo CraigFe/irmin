@@ -148,18 +148,19 @@ module Encode = struct
     | Custom c -> c.encode_bin ?headers e k
     | Map b -> map ?headers b e k
     | Prim t -> prim ?headers t e k
-    | List l -> list (t l.v) l.len e k
-    | Array a -> array (t a.v) a.len e k
+    | List l -> list (t ?headers:None l.v) l.len e k
+    | Array a -> array (t ?headers:None a.v) a.len e k
     | Tuple t -> tuple ?headers t e k
-    | Option x -> option (t x) e k
+    | Option x -> option (t ?headers:None x) e k
     | Record r -> record ?headers r e k
     | Variant v -> variant ?headers v e k
 
   and tuple : type a. a tuple -> a encode_bin =
    fun ty ?headers:_ ->
     match ty with
-    | Pair (x, y) -> pair (t x) (t y)
-    | Triple (x, y, z) -> triple (t x) (t y) (t z)
+    | Pair (x, y) -> pair (t ?headers:None x) (t ?headers:None y)
+    | Triple (x, y, z) ->
+        triple (t ?headers:None x) (t ?headers:None y) (t ?headers:None z)
 
   and map : type a b. (a, b) map -> b encode_bin =
    fun { x; g; _ } ?headers u k -> t ?headers x (g u) k
@@ -287,8 +288,8 @@ module Decode = struct
     | Custom c -> c.decode_bin ?headers buf ofs
     | Map b -> map ?headers b buf ofs
     | Prim t -> prim ?headers t buf ofs
-    | List l -> list (t l.v) l.len buf ofs
-    | Array a -> array (t a.v) a.len buf ofs
+    | List l -> list (t ?headers:None l.v) l.len buf ofs
+    | Array a -> array (t ?headers:None a.v) a.len buf ofs
     | Tuple t -> tuple ?headers t buf ofs
     | Option x -> option ?headers (t x) buf ofs
     | Record r -> record ?headers r buf ofs
@@ -297,8 +298,9 @@ module Decode = struct
   and tuple : type a. a tuple -> a decode_bin =
    fun ty ?headers:_ ->
     match ty with
-    | Pair (x, y) -> pair (t x) (t y)
-    | Triple (x, y, z) -> triple (t x) (t y) (t z)
+    | Pair (x, y) -> pair (t ?headers:None x) (t ?headers:None y)
+    | Triple (x, y, z) ->
+        triple (t ?headers:None x) (t ?headers:None y) (t ?headers:None z)
 
   and map : type a b. (a, b) map -> b decode_bin =
    fun { x; f; _ } ?headers buf ofs -> t ?headers x buf ofs >|= f
