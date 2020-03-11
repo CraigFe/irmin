@@ -3,16 +3,11 @@
  (modules test_pack multiple_instances)
  (libraries irmin-test irmin-pack alcotest-lwt common))
 
-(executable
+(test
  (name test)
  (modules test)
- (libraries digestif.ocaml test_pack))
-
-(alias
- (name runtest)
  (package irmin-pack)
- (action
-  (run ./test.exe -q --color=always)))
+ (libraries digestif.ocaml test_pack))
 
 (executable
  (name bench)

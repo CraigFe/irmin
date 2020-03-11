@@ -3,16 +3,9 @@
  (modules test_unix)
  (libraries irmin-test test_fs test_git test_http irmin-unix))
 
-(executable
+(test
  (name test)
  (modules test)
- (libraries checkseum.c digestif.c test_unix))
-
-(alias
- (name runtest)
  (package irmin-unix)
  (locks ../http)
- (action
-  (chdir
-   %{workspace_root}
-   (run %{exe:test.exe} -q --color=always))))
+ (libraries checkseum.c digestif.c test_unix))

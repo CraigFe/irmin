@@ -3,13 +3,8 @@
  (modules test_fs)
  (libraries irmin-fs irmin-test))
 
-(executable
+(test
  (name test)
  (modules test)
- (libraries digestif.c test_fs))
-
-(alias
- (name runtest)
  (package irmin-fs)
- (action
-  (run ./test.exe -q --color=always)))
+ (libraries digestif.c test_fs))

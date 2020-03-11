@@ -3,13 +3,8 @@
  (modules test_chunk)
  (libraries irmin-test irmin-chunk irmin-mem))
 
-(executable
+(test
  (name test)
  (modules test)
- (libraries digestif.c test_chunk))
-
-(alias
- (name runtest)
  (package irmin-chunk)
- (action
-  (run ./test.exe -q --color=always)))
+ (libraries digestif.c test_chunk))
