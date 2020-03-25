@@ -1,6 +1,8 @@
 module type S = sig
   type commit
+
   type branch
+
   type slice
 
   (** {1 Repositories}
@@ -50,7 +52,10 @@ module type S = sig
 end
 
 module type MAKER = functor (_ : Logs.LOG) (P : S.PRIVATE) ->
-  S with type t = P.Repo.t and type slice = P.Slice.t and type commit = Store_commit.Make(P).t
+  S
+    with type t = P.Repo.t
+     and type slice = P.Slice.t
+     and type commit = Store_commit.Make(P).t
 
 module type Repo = sig
   module type S = S

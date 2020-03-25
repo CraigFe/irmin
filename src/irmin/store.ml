@@ -110,6 +110,9 @@ end
 module Make : Store_intf.S_OF_PRIVATE =
 functor
   (P : S.PRIVATE)
+  (Root : sig
+     type t
+   end)
   ->
   struct
     type repo = P.Repo.t
@@ -129,15 +132,142 @@ functor
     type S.remote += E of P.Sync.endpoint
 
     include Errors
-
     module H = Commit.History (P.Commit)
-
     module Commit = Store_commit.Make (P)
     module Repo = Repo.Make (Log) (P)
 
     type commit = Commit.t
 
     type head_ref = [ `Branch of branch | `Head of commit option ref ]
+
+    type t = {
+      repo : Repo.t;
+      head_ref : head_ref;
+      mutable tree : (commit * Root.t) option;
+      (* cache for the store tree *)
+      lock : Lwt_mutex.t;
+    }
+
+    let commit_t t = P.Repo.commit_t t.repo
+
+    let branch_t t = P.Repo.branch_t t.repo
+
+    let repo t = t.repo
+
+    let history_t t = commit_t t
+
+    let head_ref t =
+      match t.head_ref with
+      | `Branch t -> `Branch t
+      | `Head h -> ( match !h with None -> `Empty | Some h -> `Head h )
+
+    let head t =
+      let h =
+        match head_ref t with
+        | `Head key -> Lwt.return_some key
+        | `Empty -> Lwt.return_none
+        | `Branch name -> (
+            Branch_store.find (branch_t t) name >>= function
+            | None -> Lwt.return_none
+            | Some h -> Commit.of_hash t.repo h )
+      in
+      h >|= fun h ->
+      Log.debug (fun f -> f "Head.find -> %a" Fmt.(option Commit.pp_hash) h);
+      h
+
+    module Head = struct
+      let list = Repo.heads
+
+      let find = head
+
+      let err_no_head s = Fmt.kstrf Lwt.fail_invalid_arg "Irmin.%s: no head" s
+
+      let get t =
+        find t >>= function
+        | None -> err_no_head "head"
+        | Some k -> Lwt.return k
+
+      let set t c =
+        match t.head_ref with
+        | `Head h ->
+            h := Some c;
+            Lwt.return_unit
+        | `Branch name -> Branch_store.set (branch_t t) name (Commit.hash c)
+
+      let test_and_set_unsafe t ~test ~set =
+        match t.head_ref with
+        | `Head head ->
+            (* [head] is protected by [t.lock]. *)
+            if Commit.equal_opt !head test then (
+              head := set;
+              Lwt.return_true )
+            else Lwt.return_false
+        | `Branch name ->
+            let h = function None -> None | Some c -> Some (Commit.hash c) in
+            Branch_store.test_and_set (branch_t t) name ~test:(h test)
+              ~set:(h set)
+
+      let test_and_set t ~test ~set =
+        Lwt_mutex.with_lock t.lock (fun () -> test_and_set_unsafe t ~test ~set)
+
+      type ff_error = [ `Rejected | `No_change | lca_error ]
+
+      let fast_forward t ?max_depth ?n new_head =
+        let return x = if x then Ok () else Error (`Rejected :> ff_error) in
+        find t >>= function
+        | None -> test_and_set t ~test:None ~set:(Some new_head) >|= return
+        | Some old_head -> (
+            Log.debug (fun f ->
+                f "fast-forward-head old=%a new=%a" Commit.pp_hash old_head
+                  Commit.pp_hash new_head);
+            if Commit.equal new_head old_head then
+              (* we only update if there is a change *)
+              Lwt.return_error `No_change
+            else
+              H.lcas (history_t t) ?max_depth ?n (Commit.hash new_head)
+                (Commit.hash old_head)
+              >>= function
+              | Ok [ x ] when Type.equal Hash.t x (Commit.hash old_head) ->
+                  (* we only update if new_head > old_head *)
+                  test_and_set t ~test:(Some old_head) ~set:(Some new_head)
+                  >|= return
+              | Ok _ -> Lwt.return_error `Rejected
+              | Error e -> Lwt.return_error (e :> ff_error) )
+
+      (* Merge two commits:
+         - Search for common ancestors
+         - Perform recursive 3-way merges *)
+      let three_way_merge t ?max_depth ?n ~info c1 c2 =
+        P.Repo.batch (repo t) @@ fun _ _ commit_t ->
+        H.three_way_merge commit_t ?max_depth ?n ~info (Commit.hash c1)
+          (Commit.hash c2)
+
+      let retry_merge name fn =
+        let rec aux i =
+          fn () >>= function
+          | Error _ as c -> Lwt.return c
+          | Ok true -> Merge.ok ()
+          | Ok false ->
+              Log.debug (fun f -> f "Irmin.%s: conflict, retrying (%d)." name i);
+              aux (i + 1)
+        in
+        aux 1
+
+      (* FIXME: we might want to keep the new commit in case of conflict,
+           and use it as a base for the next merge. *)
+      let merge ~into:t ~info ?max_depth ?n c1 =
+        Log.debug (fun f -> f "merge_head");
+        let aux () =
+          head t >>= fun head ->
+          match head with
+          | None -> test_and_set_unsafe t ~test:head ~set:(Some c1) >>= Merge.ok
+          | Some c2 ->
+              three_way_merge t ~info ?max_depth ?n c1 c2 >>=* fun c3 ->
+              Commit.of_hash t.repo c3 >>= fun c3 ->
+              test_and_set_unsafe t ~test:head ~set:c3 >>= Merge.ok
+        in
+        Lwt_mutex.with_lock t.lock (fun () -> retry_merge "merge_head" aux)
+    end
 
     let lift_head_diff repo fn = function
       | `Removed x -> (
@@ -174,7 +304,9 @@ functor
       let list = Repo.branches
 
       let watch t k ?init f =
-        let init = match init with None -> None | Some h -> Some (Commit.hash h) in
+        let init =
+          match init with None -> None | Some h -> Some (Commit.hash h)
+        in
         P.Branch.watch_key (P.Repo.branch_t t) k ?init (lift_head_diff t f)
         >|= fun w () -> Branch_store.unwatch (P.Repo.branch_t t) w
 
@@ -195,14 +327,77 @@ functor
         find t k >>= function None -> err_not_found k | Some v -> Lwt.return v
     end
 
+    module History = Graph.Persistent.Digraph.ConcreteBidirectional (struct
+      type t = commit
+
+      let hash h = P.Commit.Key.short_hash (Commit.hash h)
+
+      let compare x y =
+        Type.compare P.Commit.Key.t (Commit.hash x) (Commit.hash y)
+
+      let equal x y = Type.equal P.Commit.Key.t (Commit.hash x) (Commit.hash y)
+    end)
+
+    module Gmap = struct
+      module Src =
+        Object_graph.Make (P.Contents.Key) (P.Node.Metadata) (P.Node.Key)
+          (P.Commit.Key)
+          (Branch_store.Key)
+
+      module Dst = struct
+        include History
+
+        let empty () = empty
+      end
+
+      let filter_map f g =
+        let t = Dst.empty () in
+        if Src.nb_vertex g = 1 then
+          match Src.vertex g with
+          | [ v ] -> (
+              f v >|= function Some v -> Dst.add_vertex t v | None -> t )
+          | _ -> assert false
+        else
+          Src.fold_edges
+            (fun x y t ->
+              t >>= fun t ->
+              f x >>= fun x ->
+              f y >|= fun y ->
+              match (x, y) with
+              | Some x, Some y ->
+                  let t = Dst.add_vertex t x in
+                  let t = Dst.add_vertex t y in
+                  Dst.add_edge t x y
+              | _ -> t)
+            g (Lwt.return t)
+    end
+
+    let history ?depth ?(min = []) ?(max = []) t =
+      Log.debug (fun f -> f "history");
+      let pred = function
+        | `Commit k ->
+            H.parents (history_t t) k
+            >>= Lwt_list.filter_map_p (Commit.of_hash t.repo)
+            >|= fun parents ->
+            List.map (fun x -> `Commit (Commit.hash x)) parents
+        | _ -> Lwt.return_nil
+      in
+      (Head.find t >|= function Some h -> [ h ] | None -> max) >>= fun max ->
+      let max = List.map (fun k -> `Commit (Commit.hash k)) max in
+      let min = List.map (fun k -> `Commit (Commit.hash k)) min in
+      Gmap.Src.closure ?depth ~min ~max ~pred () >>= fun g ->
+      Gmap.filter_map
+        (function `Commit k -> Commit.of_hash t.repo k | _ -> Lwt.return_none)
+        g
+
     module Status = struct
       type t = [ `Empty | `Branch of branch | `Commit of commit ]
 
       let t r =
         let open Type in
         variant "status" (fun empty branch commit ->
-            function
-            | `Empty -> empty | `Branch b -> branch b | `Commit c -> commit c)
+          function
+          | `Empty -> empty | `Branch b -> branch b | `Commit c -> commit c)
         |~ case0 "empty" `Empty
         |~ case1 "branch" Branch.t (fun b -> `Branch b)
         |~ case1 "commit" (Commit.t r) (fun c -> `Commit c)
@@ -213,6 +408,26 @@ functor
         | `Branch b -> Type.pp Branch.t ppf b
         | `Commit c -> Type.pp Hash.t ppf (Commit.hash c)
     end
+
+    let to_private_commit = Commit.to_private_commit
+
+    let of_private_commit = Commit.of_private_commit
+
+    module Tree = struct
+      include Tree.Make (P)
+
+      let of_hash r h =
+        import r h >|= function Some t -> Some (`Node t) | None -> None
+
+      let shallow r h = `Node (import_no_check r h)
+
+      let hash : tree -> hash =
+       fun tr -> match hash tr with `Node h -> h | `Contents (h, _) -> h
+    end
+
+    let to_private_node = Tree.to_private_node
+
+    let of_private_node = Tree.of_private_node
   end
 
 module Make_untyped (P : S.PRIVATE) : Store_intf.UNTYPED = struct
@@ -227,19 +442,12 @@ module Make_untyped (P : S.PRIVATE) : Store_intf.UNTYPED = struct
   let pp_key = Type.pp Key.t
 
   module Key = P.Node.Path
-  include Make (P)
 
-  module Tree = struct
-    include Tree.Make (P)
-
-    let of_hash r h =
-      import r h >|= function Some t -> Some (`Node t) | None -> None
-
-    let shallow r h = `Node (import_no_check r h)
-
-    let hash : tree -> hash =
-     fun tr -> match hash tr with `Node h -> h | `Contents (h, _) -> h
-  end
+  include Make
+            (P)
+            (struct
+              type t = Tree.tree
+            end)
 
   module Commit = struct
     include Commit
@@ -281,58 +489,16 @@ module Make_untyped (P : S.PRIVATE) : Store_intf.UNTYPED = struct
 
   type tree = Tree.tree
 
-  let to_private_node = Tree.to_private_node
-
-  let of_private_node = Tree.of_private_node
-
-  let to_private_commit = Commit.to_private_commit
-
-  let of_private_commit = Commit.of_private_commit
-
   type slice = P.Slice.t
 
   type watch = unit -> unit Lwt.t
 
   let unwatch w = w ()
 
-  type t = {
-    repo : Repo.t;
-    head_ref : head_ref;
-    mutable tree : (commit * tree) option;
-    (* cache for the store tree *)
-    lock : Lwt_mutex.t;
-  }
-
-  let commit_t t = Repo.commit_t t.repo
-
-  let repo t = t.repo
-
-  let branch_t t = Repo.branch_t t.repo
-
-  let history_t t = commit_t t
-
   let status t =
     match t.head_ref with
     | `Branch b -> `Branch b
     | `Head h -> ( match !h with None -> `Empty | Some c -> `Commit c )
-
-  let head_ref t =
-    match t.head_ref with
-    | `Branch t -> `Branch t
-    | `Head h -> ( match !h with None -> `Empty | Some h -> `Head h )
-
-  let err_no_head s = Fmt.kstrf Lwt.fail_invalid_arg "Irmin.%s: no head" s
-
-  let retry_merge name fn =
-    let rec aux i =
-      fn () >>= function
-      | Error _ as c -> Lwt.return c
-      | Ok true -> Merge.ok ()
-      | Ok false ->
-          Log.debug (fun f -> f "Irmin.%s: conflict, retrying (%d)." name i);
-          aux (i + 1)
-    in
-    aux 1
 
   let of_ref repo head_ref =
     let lock = Lwt_mutex.create () in
@@ -389,20 +555,6 @@ module Make_untyped (P : S.PRIVATE) : Store_intf.UNTYPED = struct
               changed_key key;
               fn @@ `Updated ((x, vx), (y, vy)) ) )
 
-  let head t =
-    let h =
-      match head_ref t with
-      | `Head key -> Lwt.return_some key
-      | `Empty -> Lwt.return_none
-      | `Branch name -> (
-          Branch_store.find (branch_t t) name >>= function
-          | None -> Lwt.return_none
-          | Some h -> Commit.of_hash t.repo h )
-    in
-    h >|= fun h ->
-    Log.debug (fun f -> f "Head.find -> %a" Fmt.(option Commit.pp_hash) h);
-    h
-
   let tree_and_head t =
     head t >|= function
     | None -> None
@@ -437,94 +589,16 @@ module Make_untyped (P : S.PRIVATE) : Store_intf.UNTYPED = struct
     branch t >>= function
     | None -> failwith "watch a detached head: TODO"
     | Some name0 ->
-       let init =
-         match init with
-         | None -> None
-         | Some head0 -> Some [ (name0, head0.Commit.h) ]
-       in
-       Branch_store.watch (branch_t t) ?init (fun name head ->
-           if Type.equal Branch_store.Key.t name0 name then
-             lift_head_diff t.repo fn head
-           else Lwt.return_unit)
-       >|= fun id () -> Branch_store.unwatch (branch_t t) id
-
-  module Head = struct
-    let list = Repo.heads
-
-    let find = head
-
-    let get t =
-      find t >>= function None -> err_no_head "head" | Some k -> Lwt.return k
-
-    let set t c =
-      match t.head_ref with
-      | `Head h ->
-          h := Some c;
-          Lwt.return_unit
-      | `Branch name -> Branch_store.set (branch_t t) name c.Commit.h
-
-    let test_and_set_unsafe t ~test ~set =
-      match t.head_ref with
-      | `Head head ->
-          (* [head] is protected by [t.lock]. *)
-          if Commit.equal_opt !head test then (
-            head := set;
-            Lwt.return_true )
-          else Lwt.return_false
-      | `Branch name ->
-          let h = function None -> None | Some c -> Some c.Commit.h in
-          Branch_store.test_and_set (branch_t t) name ~test:(h test)
-            ~set:(h set)
-
-    let test_and_set t ~test ~set =
-      Lwt_mutex.with_lock t.lock (fun () -> test_and_set_unsafe t ~test ~set)
-
-    type ff_error = [ `Rejected | `No_change | lca_error ]
-
-    let fast_forward t ?max_depth ?n new_head =
-      let return x = if x then Ok () else Error (`Rejected :> ff_error) in
-      find t >>= function
-      | None -> test_and_set t ~test:None ~set:(Some new_head) >|= return
-      | Some old_head -> (
-          Log.debug (fun f ->
-              f "fast-forward-head old=%a new=%a" Commit.pp_hash old_head
-                Commit.pp_hash new_head);
-          if Commit.equal new_head old_head then
-            (* we only update if there is a change *)
-            Lwt.return_error `No_change
-          else
-            H.lcas (history_t t) ?max_depth ?n new_head.Commit.h
-              old_head.Commit.h
-            >>= function
-            | Ok [ x ] when Type.equal Hash.t x old_head.Commit.h ->
-                (* we only update if new_head > old_head *)
-                test_and_set t ~test:(Some old_head) ~set:(Some new_head)
-                >|= return
-            | Ok _ -> Lwt.return_error `Rejected
-            | Error e -> Lwt.return_error (e :> ff_error) )
-
-    (* Merge two commits:
-       - Search for common ancestors
-       - Perform recursive 3-way merges *)
-    let three_way_merge t ?max_depth ?n ~info c1 c2 =
-      P.Repo.batch (repo t) @@ fun _ _ commit_t ->
-      H.three_way_merge commit_t ?max_depth ?n ~info c1.Commit.h c2.Commit.h
-
-    (* FIXME: we might want to keep the new commit in case of conflict,
-         and use it as a base for the next merge. *)
-    let merge ~into:t ~info ?max_depth ?n c1 =
-      Log.debug (fun f -> f "merge_head");
-      let aux () =
-        head t >>= fun head ->
-        match head with
-        | None -> test_and_set_unsafe t ~test:head ~set:(Some c1) >>= Merge.ok
-        | Some c2 ->
-            three_way_merge t ~info ?max_depth ?n c1 c2 >>=* fun c3 ->
-            Commit.of_hash t.repo c3 >>= fun c3 ->
-            test_and_set_unsafe t ~test:head ~set:c3 >>= Merge.ok
-      in
-      Lwt_mutex.with_lock t.lock (fun () -> retry_merge "merge_head" aux)
-  end
+        let init =
+          match init with
+          | None -> None
+          | Some head0 -> Some [ (name0, head0.Commit.h) ]
+        in
+        Branch_store.watch (branch_t t) ?init (fun name head ->
+            if Type.equal Branch_store.Key.t name0 name then
+              lift_head_diff t.repo fn head
+            else Lwt.return_unit)
+        >|= fun id () -> Branch_store.unwatch (branch_t t) id
 
   (* Retry an operation until the optimistic lock is happy. Ensure
      that the operation is done at least once. *)
@@ -789,7 +863,7 @@ module Make_untyped (P : S.PRIVATE) : Store_intf.UNTYPED = struct
   let clone ~src ~dst =
     (Head.find src >>= function
      | None -> Branch_store.remove (branch_t src) dst
-     | Some h -> Branch_store.set (branch_t src) dst h.Commit.h)
+     | Some h -> Branch_store.set (branch_t src) dst (Commit.hash h))
     >>= fun () -> of_branch (repo src) dst
 
   let return_lcas r = function
@@ -800,18 +874,18 @@ module Make_untyped (P : S.PRIVATE) : Store_intf.UNTYPED = struct
   let lcas ?max_depth ?n t1 t2 =
     Head.get t1 >>= fun h1 ->
     Head.get t2 >>= fun h2 ->
-    H.lcas (history_t t1) ?max_depth ?n h1.Commit.h h2.Commit.h
+    H.lcas (history_t t1) ?max_depth ?n (Commit.hash h1) (Commit.hash h2)
     >>= return_lcas t1.repo
 
   let lcas_with_commit t ?max_depth ?n c =
     Head.get t >>= fun h ->
-    H.lcas (history_t t) ?max_depth ?n h.Commit.h c.Commit.h
+    H.lcas (history_t t) ?max_depth ?n (Commit.hash h) (Commit.hash c)
     >>= return_lcas t.repo
 
   let lcas_with_branch t ?max_depth ?n b =
     Head.get t >>= fun h ->
     Head.get { t with head_ref = `Branch b } >>= fun head ->
-    H.lcas (history_t t) ?max_depth ?n h.Commit.h head.Commit.h
+    H.lcas (history_t t) ?max_depth ?n (Commit.hash h) (Commit.hash h)
     >>= return_lcas t.repo
 
   module Private = P
@@ -843,67 +917,6 @@ module Make_untyped (P : S.PRIVATE) : Store_intf.UNTYPED = struct
     | `Branch name -> merge_with_branch into ~info ?max_depth ?n name
     | `Head h -> merge_with_commit into ~info ?max_depth ?n h
     | `Empty -> Merge.ok ()
-
-  module History = OCamlGraph.Persistent.Digraph.ConcreteBidirectional (struct
-    type t = commit
-
-    let hash h = P.Commit.Key.short_hash h.Commit.h
-
-    let compare x y = Type.compare P.Commit.Key.t x.Commit.h y.Commit.h
-
-    let equal x y = Type.equal P.Commit.Key.t x.Commit.h y.Commit.h
-  end)
-
-  module Gmap = struct
-    module Src =
-      Object_graph.Make (P.Contents.Key) (P.Node.Metadata) (P.Node.Key)
-        (P.Commit.Key)
-        (Branch_store.Key)
-
-    module Dst = struct
-      include History
-
-      let empty () = empty
-    end
-
-    let filter_map f g =
-      let t = Dst.empty () in
-      if Src.nb_vertex g = 1 then
-        match Src.vertex g with
-        | [ v ] -> (
-            f v >|= function Some v -> Dst.add_vertex t v | None -> t )
-        | _ -> assert false
-      else
-        Src.fold_edges
-          (fun x y t ->
-            t >>= fun t ->
-            f x >>= fun x ->
-            f y >|= fun y ->
-            match (x, y) with
-            | Some x, Some y ->
-                let t = Dst.add_vertex t x in
-                let t = Dst.add_vertex t y in
-                Dst.add_edge t x y
-            | _ -> t)
-          g (Lwt.return t)
-  end
-
-  let history ?depth ?(min = []) ?(max = []) t =
-    Log.debug (fun f -> f "history");
-    let pred = function
-      | `Commit k ->
-          H.parents (history_t t) k
-          >>= Lwt_list.filter_map_p (Commit.of_hash t.repo)
-          >|= fun parents -> List.map (fun x -> `Commit x.Commit.h) parents
-      | _ -> Lwt.return_nil
-    in
-    (Head.find t >|= function Some h -> [ h ] | None -> max) >>= fun max ->
-    let max = List.map (fun k -> `Commit k.Commit.h) max in
-    let min = List.map (fun k -> `Commit k.Commit.h) min in
-    Gmap.Src.closure ?depth ~min ~max ~pred () >>= fun g ->
-    Gmap.filter_map
-      (function `Commit k -> Commit.of_hash t.repo k | _ -> Lwt.return_none)
-      g
 
   let pp_option = Type.pp (Type.option Type.int)
 

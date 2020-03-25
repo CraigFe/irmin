@@ -6,6 +6,25 @@ module Path = struct
     update : 's -> 'a -> 's Lwt.t;
   }
 
+  let ( / ) outer inner =
+    let open Lwt.Infix in
+    let get s =
+      outer.get s >>= function
+      | Some mid -> inner.get mid
+      | None -> Lwt.return None
+    in
+    let update s a =
+      outer.get s >>= function
+      | None -> Lwt.return s
+      | Some mid -> inner.update mid a >>= fun mid -> outer.update s mid
+    in
+    { get; update }
+
+  let id =
+    let get s = Lwt.return (Some s) in
+    let update _ s = Lwt.return s in
+    { get; update }
+
   type ('head, 'nil) hlist =
     | [] : ('nil, 'nil) hlist
     | ( :: ) : ('elt * ('head, 'nil) hlist) -> ('elt * 'head, 'nil) hlist
@@ -13,9 +32,14 @@ end
 
 type 'a typ =
   | Typ_record : 'a record -> 'a typ
+      (** Product of zero-or-more constituent trees *)
   | Typ_variant : 'a variant -> 'a typ
-  | Typ_assoc : 'a Type.t -> 'a typ
-  | Typ_unit : unit typ
+      (** Sum of zero-or-more constituent trees *)
+  | Typ_assoc : 'a typ -> 'a typ
+      (** An association list from strings to trees of the given type *)
+  | Type_tree : 'a typ -> 'a typ
+  | Typ_primitive : 'a Type.t -> 'a typ
+      (** Stores exactly one value of a given type *)
 
 (* Records *)
 and 'record record =
@@ -29,7 +53,7 @@ and 'record record =
 
 and ('record, 'field) field = {
   f_name : string;
-  f_type : 'field Type.t;
+  f_type : 'field typ;
   f_get : 'record -> 'field;
   f_update : 'record -> 'field -> 'record;
 }
@@ -104,8 +128,7 @@ module Record = struct
 
   type nonrec ('a, 'b) field = ('a, 'b) field
 
-  let field f_name f_type ~update:f_update f_get =
-    { f_name; f_type; f_get; f_update }
+  let field f_name f_type f_update f_get = { f_name; f_type; f_get; f_update }
 
   let record :
       type r. string -> r -> ('a, r, r, 'lens_nil, 'lens_nil) open_record =
@@ -273,7 +296,7 @@ module Variant = struct
           {
             c_tag;
             c_name;
-            c_type = Typ_unit;
+            c_type = Typ_primitive Type.unit;
             c_constructor = (fun () -> c_singleton);
             c_witness = Witness.make ();
           })

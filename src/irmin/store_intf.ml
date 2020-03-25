@@ -922,7 +922,12 @@ module type TYPED = sig
     with_write_options
 end
 
-module type S_OF_PRIVATE = functor (P : Sigs.PRIVATE) ->
+module type S_OF_PRIVATE = functor
+  (P : Sigs.PRIVATE)
+  (_ : sig
+     type t
+   end)
+  ->
   S
     with type branch = P.Branch.key
      and type hash = P.Hash.t

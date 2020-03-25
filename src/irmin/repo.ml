@@ -10,7 +10,9 @@ module Make (Log : Logs.LOG) (P : S.PRIVATE) = struct
   module Commit = Store_commit.Make (P)
 
   type commit = Commit.t
+
   type branch = Branch_store.key
+
   type slice = P.Slice.t
 
   module OCamlGraph = Graph
