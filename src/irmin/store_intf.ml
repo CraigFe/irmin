@@ -1,35 +1,5 @@
 module Sigs = S
 
-module type COMMIT = sig
-  type repo
-
-  type hash
-
-  type t
-  (** The type for store commits. *)
-
-  val t : repo -> t Type.t
-  (** [t] is the value type for {!t}. *)
-
-  val pp_hash : t Fmt.t
-  (** [pp] is the pretty-printer for commit. Display only the hash. *)
-
-  val parents : t -> hash list
-  (** [parents c] are [c]'s parents. *)
-
-  val info : t -> Info.t
-  (** [info c] is [c]'s info. *)
-
-  (** {1 Import/Export} *)
-
-  val hash : t -> hash
-  (** [hash c] it [c]'s hash. *)
-
-  val of_hash : repo -> hash -> t option Lwt.t
-  (** [of_hash r h] is the the commit object in [r] having [h] as hash, or
-      [None] is no such commit object exists. *)
-end
-
 module type S = sig
   (** {1 Irmin stores}
 
@@ -75,8 +45,14 @@ module type S = sig
   (** The type for errors associated with functions computing least common
       ancestors *)
 
+  val lca_error_t : lca_error Type.t
+  (** [lca_error_t] is the value type for {!lca_error}. *)
+
   type ff_error = [ `No_change | `Rejected | lca_error ]
   (** The type for errors for {!fast_forward}. *)
+
+  val ff_error_t : ff_error Type.t
+  (** [ff_error_t] is the value type for {!ff_error}. *)
 
   type 'a write_error =
     [ Merge.conflict | `Too_many_retries of int | `Test_was of 'a option ]
@@ -87,6 +63,9 @@ module type S = sig
         committed and too many attemps have been tried (livelock).
       - A "test and set" operation has failed and the current value is [v]
         instead of the one we were waiting for. *)
+
+  val write_error_t : 'a Type.t -> 'a write_error Type.t
+  (** [write_error_t] is the value type for {!write_error}. *)
 
   (** Repositories. *)
   module Repo : sig
@@ -307,7 +286,10 @@ module type S = sig
 
   (** [Commit] defines immutable objects to describe store updates. *)
   module Commit :
-    COMMIT with type t = commit and type repo := repo and type hash := hash
+    Store_commit.S
+      with type t = commit
+       and type repo := repo
+       and type hash := hash
 
   (** {1 History} *)
 
@@ -390,15 +372,6 @@ module type S = sig
   val kind_t : [ `Contents | `Node ] Type.t
   (** [kind_t] is the value type for values returned by {!kind}. *)
 
-  val lca_error_t : lca_error Type.t
-  (** [lca_error_t] is the value type for {!lca_error}. *)
-
-  val ff_error_t : ff_error Type.t
-  (** [ff_error_t] is the value type for {!ff_error}. *)
-
-  val write_error_t : 'a Type.t -> 'a write_error Type.t
-  (** [write_error_t] is the value type for {!write_error}. *)
-
   (** Private functions, which might be used by the backends. *)
   module Private : sig
     include
@@ -427,6 +400,13 @@ module type S = sig
   val of_private_commit : repo -> Private.Commit.value -> commit
   (** [of_private_commit r c] is the commit associated with the private commit
       object [c]. *)
+end
+
+(** Store types *)
+module type TYPE = sig
+  type t
+
+  val t : t Typed_tree.t
 end
 
 (** Stores with a single content type *)
@@ -465,7 +445,10 @@ module type UNTYPED = sig
 
   module Commit : sig
     include
-      COMMIT with type t = commit and type repo := repo and type hash := hash
+      Store_commit.S
+        with type t = commit
+         and type repo := repo
+         and type hash := hash
 
     val v : repo -> info:Info.t -> parents:hash list -> tree -> commit Lwt.t
     (** [v r i ~parents:p t] is the commit [c] such that:
@@ -939,6 +922,15 @@ module type TYPED = sig
     with_write_options
 end
 
+module type S_OF_PRIVATE = functor (P : Sigs.PRIVATE) ->
+  S
+    with type branch = P.Branch.key
+     and type hash = P.Hash.t
+     and type slice = P.Slice.t
+     and type metadata = P.Node.Val.metadata
+     and type repo = P.Repo.t
+     and module Private = P
+
 module type UNTYPED_MAKER = functor
   (M : S.METADATA)
   (C : S.CONTENTS)
@@ -954,9 +946,22 @@ module type UNTYPED_MAKER = functor
      and type branch = B.t
      and type hash = H.t
 
+module type UNTYPED_OF_PRIVATE = functor (P : Sigs.PRIVATE) ->
+  UNTYPED
+    with type key = P.Node.Path.t
+     and type contents = P.Contents.value
+     and type branch = P.Branch.key
+     and type hash = P.Hash.t
+     and type slice = P.Slice.t
+     and type step = P.Node.Path.step
+     and type metadata = P.Node.Val.metadata
+     and module Key = P.Node.Path
+     and type repo = P.Repo.t
+     and module Private = P
+
 module type TYPED_MAKER = functor
   (M : S.METADATA)
-  (Type : Type.S)
+  (Type : TYPE)
   (B : S.BRANCH)
   (H : S.HASH)
   ->
@@ -966,31 +971,38 @@ module type TYPED_MAKER = functor
      and type branch = B.t
      and type hash = H.t
 
+module type TYPED_OF_PRIVATE = functor (P : Sigs.PRIVATE) (Type : TYPE) ->
+  TYPED
+    with type branch = P.Branch.key
+     and type root = Type.t
+     and type hash = P.Hash.t
+     and type slice = P.Slice.t
+     and type metadata = P.Node.Val.metadata
+     and type repo = P.Repo.t
+     and module Private = P
+
 module type Store = sig
   module type S = S
+
+  module type TYPE = TYPE
 
   module type TYPED = TYPED
 
   module type TYPED_MAKER = TYPED_MAKER
 
+  module type TYPED_OF_PRIVATE = TYPED_OF_PRIVATE
+
   module type UNTYPED = UNTYPED
 
   module type UNTYPED_MAKER = UNTYPED_MAKER
 
+  module type UNTYPED_OF_PRIVATE = UNTYPED_OF_PRIVATE
+
   type Sigs.remote += Store : (module S with type t = 'a) * 'a -> Sigs.remote
 
-  module Make_untyped (P : Sigs.PRIVATE) :
-    UNTYPED
-      with type key = P.Node.Path.t
-       and type contents = P.Contents.value
-       and type branch = P.Branch.key
-       and type hash = P.Hash.t
-       and type slice = P.Slice.t
-       and type step = P.Node.Path.step
-       and type metadata = P.Node.Val.metadata
-       and module Key = P.Node.Path
-       and type repo = P.Repo.t
-       and module Private = P
+  module Make_untyped : UNTYPED_OF_PRIVATE
+
+  module Make_typed : TYPED_OF_PRIVATE
 
   module Content_addressable
       (X : Sigs.APPEND_ONLY_STORE_MAKER)

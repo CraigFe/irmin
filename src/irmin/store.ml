@@ -51,35 +51,165 @@ struct
     add t k v >|= fun () -> k
 end
 
-module Make_untyped (P : S.PRIVATE) = struct
-  module Branch_store = P.Branch
-
-  type branch = Branch_store.key
-
-  module Hash = P.Hash
-
-  type hash = Hash.t
-
+(** Error types and value types that are common to {!TYPED} and {!UNTYPED}
+    stores *)
+module Errors = struct
   type lca_error = [ `Max_depth_reached | `Too_many_lcas ]
+
+  let lca_error_t =
+    Type.enum "lca-error"
+      [
+        ("max-depth-reached", `Max_depth_reached);
+        ("too-many-lcas", `Too_many_lcas);
+      ]
 
   type ff_error = [ `No_change | `Rejected | lca_error ]
 
-  module Key = P.Node.Path
+  let ff_error_t =
+    Type.enum "ff-error"
+      [
+        ("max-depth-reached", `Max_depth_reached);
+        ("too-many-lcas", `Too_many_lcas);
+        ("no-change", `No_change);
+        ("rejected", `Rejected);
+      ]
+
+  type 'a write_error =
+    [ Merge.conflict | `Too_many_retries of int | `Test_was of 'a option ]
+
+  let write_error e : ('a, 'b write_error) result Lwt.t = Lwt.return_error e
+
+  let pp_write_error elt_t ppf = function
+    | `Conflict e -> Fmt.pf ppf "Got a conflict: %s" e
+    | `Too_many_retries i ->
+        Fmt.pf ppf
+          "Failure after %d attempts to retry the operation: Too many attempts."
+          i
+    | `Test_was t ->
+        Fmt.pf ppf "Test-and-set failed: got %a when reading the store"
+          Type.(pp (option elt_t))
+          t
+
+  let write_error_t : type a. a Type.t -> a write_error Type.t =
+   fun elt_t ->
+    let open Type in
+    variant "write-error" (fun c m e ->
+      function
+      | `Conflict x -> c x | `Too_many_retries x -> m x | `Test_was x -> e x)
+    |~ case1 "conflict" string (fun x -> `Conflict x)
+    |~ case1 "too-many-retries" int (fun x -> `Too_many_retries x)
+    |~ case1 "test-got" (option elt_t) (fun x -> `Test_was x)
+    |> sealv
+
+  let write_error_t : type a. a Type.t -> a write_error Type.t =
+   fun elt_t ->
+    let of_string _ = assert false in
+    Type.like ~cli:(pp_write_error elt_t, of_string) (write_error_t elt_t)
+end
+
+module Make : Store_intf.S_OF_PRIVATE =
+functor
+  (P : S.PRIVATE)
+  ->
+  struct
+    type repo = P.Repo.t
+
+    module Branch_store = P.Branch
+
+    type branch = Branch_store.key
+
+    let pp_branch = Type.pp Branch_store.Key.t
+
+    let branch_t t = P.Repo.branch_t t
+
+    module Hash = P.Hash
+
+    type hash = Hash.t
+
+    type S.remote += E of P.Sync.endpoint
+
+    include Errors
+
+    module H = Commit.History (P.Commit)
+
+    module Commit = Store_commit.Make (P)
+    module Repo = Repo.Make (Log) (P)
+
+    type commit = Commit.t
+
+    type head_ref = [ `Branch of branch | `Head of commit option ref ]
+
+    let lift_head_diff repo fn = function
+      | `Removed x -> (
+          Commit.of_hash repo x >>= function
+          | None -> Lwt.return_unit
+          | Some x -> fn (`Removed x) )
+      | `Updated (x, y) -> (
+          Commit.of_hash repo x >>= fun x ->
+          Commit.of_hash repo y >>= fun y ->
+          match (x, y) with
+          | None, None -> Lwt.return_unit
+          | Some x, None -> fn (`Removed x)
+          | None, Some y -> fn (`Added y)
+          | Some x, Some y -> fn (`Updated (x, y)) )
+      | `Added x -> (
+          Commit.of_hash repo x >>= function
+          | None -> Lwt.return_unit
+          | Some x -> fn (`Added x) )
+
+    module Branch = struct
+      include P.Branch.Key
+
+      let mem t = P.Branch.mem (P.Repo.branch_t t)
+
+      let find t br =
+        P.Branch.find (P.Repo.branch_t t) br >>= function
+        | None -> Lwt.return_none
+        | Some h -> Commit.of_hash t h
+
+      let set t br h = P.Branch.set (P.Repo.branch_t t) br (Commit.hash h)
+
+      let remove t = P.Branch.remove (P.Repo.branch_t t)
+
+      let list = Repo.branches
+
+      let watch t k ?init f =
+        let init = match init with None -> None | Some h -> Some (Commit.hash h) in
+        P.Branch.watch_key (P.Repo.branch_t t) k ?init (lift_head_diff t f)
+        >|= fun w () -> Branch_store.unwatch (P.Repo.branch_t t) w
+
+      let watch_all t ?init f =
+        let init =
+          match init with
+          | None -> None
+          | Some i -> Some (List.map (fun (k, v) -> (k, Commit.hash v)) i)
+        in
+        let f k v = lift_head_diff t (f k) v in
+        P.Branch.watch (P.Repo.branch_t t) ?init f >|= fun w () ->
+        Branch_store.unwatch (P.Repo.branch_t t) w
+
+      let err_not_found k =
+        Fmt.kstrf invalid_arg "Branch.get: %a not found" pp_branch k
+
+      let get t k =
+        find t k >>= function None -> err_not_found k | Some v -> Lwt.return v
+    end
+
+  end
+
+module Make_untyped (P : S.PRIVATE) : Store_intf.UNTYPED = struct
+  type step = Key.step
+
+  let step_t = Key.step_t
 
   type key = Key.t
 
-  module Metadata = P.Node.Metadata
-  module H = Commit.History (P.Commit)
+  let key_t = Key.t
 
-  type S.remote += E of P.Sync.endpoint
+  let pp_key = Type.pp Key.t
 
-  module Contents = struct
-    include P.Contents.Val
-
-    let of_hash r h = P.Contents.find (P.Repo.contents_t r) h
-
-    let hash c = P.Contents.Key.hash c
-  end
+  module Key = P.Node.Path
+  include Make (P)
 
   module Tree = struct
     include Tree.Make (P)
@@ -93,32 +223,8 @@ module Make_untyped (P : S.PRIVATE) = struct
      fun tr -> match hash tr with `Node h -> h | `Contents (h, _) -> h
   end
 
-  let save_contents b c = P.Contents.add b c
-
-  let save_tree ?(clear = true) r x y (tr : Tree.tree) =
-    match tr with
-    | `Contents (c, _) -> save_contents x c
-    | `Node n -> Tree.export ~clear r x y n
-
-  type node = Tree.node
-
-  type contents = Contents.t
-
-  type metadata = Metadata.t
-
-  type tree = Tree.tree
-
-  type repo = P.Repo.t
-
   module Commit = struct
-    type t = { r : repo; h : Hash.t; v : P.Commit.value }
-
-    let t r =
-      let open Type in
-      record "commit" (fun h v -> { r; h; v })
-      |+ field "hash" Hash.t (fun t -> t.h)
-      |+ field "value" P.Commit.Val.t (fun t -> t.v)
-      |> sealr
+    include Commit
 
     let v r ~info ~parents tree =
       P.Repo.batch r @@ fun contents_t node_t commit_t ->
@@ -129,39 +235,33 @@ module Make_untyped (P : S.PRIVATE) = struct
       let v = P.Commit.Val.v ~info ~node ~parents in
       P.Commit.add commit_t v >|= fun h -> { r; h; v }
 
-    let node t = P.Commit.Val.node t.v
-
     let tree t = Tree.import_no_check t.r (node t) |> fun n -> `Node n
-
-    let equal x y = Type.equal Hash.t x.h y.h
-
-    let hash t = t.h
-
-    let info t = P.Commit.Val.info t.v
-
-    let parents t = P.Commit.Val.parents t.v
-
-    let pp_hash ppf t = Type.pp Hash.t ppf t.h
-
-    let of_hash r h =
-      P.Commit.find (P.Repo.commit_t r) h >|= function
-      | None -> None
-      | Some v -> Some { r; h; v }
-
-    let to_private_commit t = t.v
-
-    let of_private_commit r v =
-      let h = P.Commit.Key.hash v in
-      { r; h; v }
-
-    let equal_opt x y =
-      match (x, y) with
-      | None, None -> true
-      | Some x, Some y -> equal x y
-      | _ -> false
   end
 
-  type commit = Commit.t
+  module Metadata = P.Node.Metadata
+
+  module Contents = struct
+    include P.Contents.Val
+
+    let of_hash r h = P.Contents.find (P.Repo.contents_t r) h
+
+    let hash c = P.Contents.Key.hash c
+  end
+
+  type contents = Contents.t
+
+  let save_contents b c = P.Contents.add b c
+
+  let save_tree ?(clear = true) r x y (tr : Tree.tree) =
+    match tr with
+    | `Contents (c, _) -> save_contents x c
+    | `Node n -> Tree.export ~clear r x y n
+
+  type node = Tree.node
+
+  type metadata = Metadata.t
+
+  type tree = Tree.tree
 
   let to_private_node = Tree.to_private_node
 
@@ -171,167 +271,11 @@ module Make_untyped (P : S.PRIVATE) = struct
 
   let of_private_commit = Commit.of_private_commit
 
-  type head_ref = [ `Branch of branch | `Head of commit option ref ]
-
-  module OCamlGraph = Graph
-  module Graph = Node.Graph (P.Node)
-  module KGraph =
-    Object_graph.Make (P.Contents.Key) (P.Node.Metadata) (P.Node.Key)
-      (P.Commit.Key)
-      (Branch_store.Key)
-
   type slice = P.Slice.t
 
   type watch = unit -> unit Lwt.t
 
   let unwatch w = w ()
-
-  module Repo = struct
-    type t = repo
-
-    let v = P.Repo.v
-
-    let close = P.Repo.close
-
-    let graph_t t = P.Repo.node_t t
-
-    let history_t t = P.Repo.commit_t t
-
-    let branch_t t = P.Repo.branch_t t
-
-    let commit_t t = P.Repo.commit_t t
-
-    let node_t t = P.Repo.node_t t
-
-    let contents_t t = P.Repo.contents_t t
-
-    let branches t = P.Branch.list (branch_t t)
-
-    let heads repo =
-      let t = branch_t repo in
-      Branch_store.list t >>= fun bs ->
-      Lwt_list.fold_left_s
-        (fun acc r ->
-          Branch_store.find t r >>= function
-          | None -> Lwt.return acc
-          | Some h -> (
-              Commit.of_hash repo h >|= function
-              | None -> acc
-              | Some h -> h :: acc ))
-        [] bs
-
-    let export ?(full = true) ?depth ?(min = []) ?(max = `Head) t =
-      Log.debug (fun f ->
-          f "export depth=%s full=%b min=%d max=%s"
-            (match depth with None -> "<none>" | Some d -> string_of_int d)
-            full (List.length min)
-            ( match max with
-            | `Head -> "heads"
-            | `Max m -> string_of_int (List.length m) ));
-      (match max with `Head -> heads t | `Max m -> Lwt.return m)
-      >>= fun max ->
-      P.Slice.empty () >>= fun slice ->
-      let max = List.map (fun x -> `Commit x.Commit.h) max in
-      let min = List.map (fun x -> `Commit x.Commit.h) min in
-      let pred = function
-        | `Commit k ->
-            H.parents (history_t t) k >|= fun parents ->
-            List.map (fun x -> `Commit x) parents
-        | _ -> Lwt.return_nil
-      in
-      KGraph.closure ?depth ~pred ~min ~max () >>= fun g ->
-      let keys =
-        List.fold_left
-          (fun acc -> function `Commit c -> c :: acc | _ -> acc)
-          [] (KGraph.vertex g)
-      in
-      let root_nodes = ref [] in
-      Lwt_list.iter_p
-        (fun k ->
-          P.Commit.find (commit_t t) k >>= function
-          | None -> Lwt.return_unit
-          | Some c ->
-              root_nodes := P.Commit.Val.node c :: !root_nodes;
-              P.Slice.add slice (`Commit (k, c)))
-        keys
-      >>= fun () ->
-      if not full then Lwt.return slice
-      else
-        (* XXX: we can compute a [min] if needed *)
-        Graph.closure (graph_t t) ~min:[] ~max:!root_nodes >>= fun nodes ->
-        let module KSet = Set.Make (struct
-          type t = P.Contents.key
-
-          let compare = Type.compare P.Contents.Key.t
-        end) in
-        let contents = ref KSet.empty in
-        Lwt_list.iter_p
-          (fun k ->
-            P.Node.find (node_t t) k >>= function
-            | None -> Lwt.return_unit
-            | Some v ->
-                List.iter
-                  (function
-                    | _, `Contents (c, _) -> contents := KSet.add c !contents
-                    | _ -> ())
-                  (P.Node.Val.list v);
-                P.Slice.add slice (`Node (k, v)))
-          nodes
-        >>= fun () ->
-        Lwt_list.iter_p
-          (fun k ->
-            P.Contents.find (contents_t t) k >>= function
-            | None -> Lwt.return_unit
-            | Some m -> P.Slice.add slice (`Contents (k, m)))
-          (KSet.elements !contents)
-        >|= fun () -> slice
-
-    exception Import_error of string
-
-    let import_error fmt = Fmt.kstrf (fun x -> Lwt.fail (Import_error x)) fmt
-
-    let import t s =
-      let aux name add dk (k, v) =
-        add v >>= fun k' ->
-        if not (Type.equal dk k k') then
-          import_error "%s import error: expected %a, got %a" name
-            Type.(pp dk)
-            k
-            Type.(pp dk)
-            k'
-        else Lwt.return_unit
-      in
-      let contents = ref [] in
-      let nodes = ref [] in
-      let commits = ref [] in
-      P.Slice.iter s (function
-        | `Contents c ->
-            contents := c :: !contents;
-            Lwt.return_unit
-        | `Node n ->
-            nodes := n :: !nodes;
-            Lwt.return_unit
-        | `Commit c ->
-            commits := c :: !commits;
-            Lwt.return_unit)
-      >>= fun () ->
-      P.Repo.batch t @@ fun contents_t node_t commit_t ->
-      Lwt.catch
-        (fun () ->
-          Lwt_list.iter_p
-            (aux "Contents" (P.Contents.add contents_t) P.Contents.Key.t)
-            !contents
-          >>= fun () ->
-          Lwt_list.iter_p (aux "Node" (P.Node.add node_t) P.Node.Key.t) !nodes
-          >>= fun () ->
-          Lwt_list.iter_p
-            (aux "Commit" (P.Commit.add commit_t) P.Commit.Key.t)
-            !commits
-          >|= fun () -> Ok ())
-        (function
-          | Import_error e -> Lwt.return_error (`Msg e)
-          | e -> Fmt.kstrf Lwt.fail_invalid_arg "impot error: %a" Fmt.exn e)
-  end
 
   type t = {
     repo : Repo.t;
@@ -341,13 +285,11 @@ module Make_untyped (P : S.PRIVATE) = struct
     lock : Lwt_mutex.t;
   }
 
-  type step = Key.step
+  let commit_t t = Repo.commit_t t.repo
 
   let repo t = t.repo
 
   let branch_t t = Repo.branch_t t.repo
-
-  let commit_t t = Repo.commit_t t.repo
 
   let history_t t = commit_t t
 
@@ -360,11 +302,6 @@ module Make_untyped (P : S.PRIVATE) = struct
     match t.head_ref with
     | `Branch t -> `Branch t
     | `Head h -> ( match !h with None -> `Empty | Some h -> `Head h )
-
-  let branch t =
-    match head_ref t with
-    | `Branch t -> Lwt.return_some t
-    | `Empty | `Head _ -> Lwt.return_none
 
   let err_no_head s = Fmt.kstrf Lwt.fail_invalid_arg "Irmin.%s: no head" s
 
@@ -382,8 +319,6 @@ module Make_untyped (P : S.PRIVATE) = struct
   let of_ref repo head_ref =
     let lock = Lwt_mutex.create () in
     Lwt.return { lock; head_ref; repo; tree = None }
-
-  let pp_branch = Type.pp Branch_store.Key.t
 
   let err_invalid_branch t =
     let err = Fmt.strf "%a is not a valid branch name." pp_branch t in
@@ -470,45 +405,30 @@ module Make_untyped (P : S.PRIVATE) = struct
     | None -> Tree.empty
     | Some (_, tree) -> (tree :> tree)
 
-  let lift_head_diff repo fn = function
-    | `Removed x -> (
-        Commit.of_hash repo x >>= function
-        | None -> Lwt.return_unit
-        | Some x -> fn (`Removed x) )
-    | `Updated (x, y) -> (
-        Commit.of_hash repo x >>= fun x ->
-        Commit.of_hash repo y >>= fun y ->
-        match (x, y) with
-        | None, None -> Lwt.return_unit
-        | Some x, None -> fn (`Removed x)
-        | None, Some y -> fn (`Added y)
-        | Some x, Some y -> fn (`Updated (x, y)) )
-    | `Added x -> (
-        Commit.of_hash repo x >>= function
-        | None -> Lwt.return_unit
-        | Some x -> fn (`Added x) )
+  let watch_key t key ?init fn =
+    Log.info (fun f -> f "watch-key %a" pp_key key);
+    let tree c = Tree.find_tree (Commit.tree c) key in
+    watch t ?init (lift_tree_diff ~key tree fn)
+
+  let branch t =
+    match head_ref t with
+    | `Branch t -> Lwt.return_some t
+    | `Empty | `Head _ -> Lwt.return_none
 
   let watch t ?init fn =
     branch t >>= function
     | None -> failwith "watch a detached head: TODO"
     | Some name0 ->
-        let init =
-          match init with
-          | None -> None
-          | Some head0 -> Some [ (name0, head0.Commit.h) ]
-        in
-        Branch_store.watch (branch_t t) ?init (fun name head ->
-            if Type.equal Branch_store.Key.t name0 name then
-              lift_head_diff t.repo fn head
-            else Lwt.return_unit)
-        >|= fun id () -> Branch_store.unwatch (branch_t t) id
-
-  let pp_key = Type.pp Key.t
-
-  let watch_key t key ?init fn =
-    Log.info (fun f -> f "watch-key %a" pp_key key);
-    let tree c = Tree.find_tree (Commit.tree c) key in
-    watch t ?init (lift_tree_diff ~key tree fn)
+       let init =
+         match init with
+         | None -> None
+         | Some head0 -> Some [ (name0, head0.Commit.h) ]
+       in
+       Branch_store.watch (branch_t t) ?init (fun name head ->
+           if Type.equal Branch_store.Key.t name0 name then
+             lift_head_diff t.repo fn head
+           else Lwt.return_unit)
+       >|= fun id () -> Branch_store.unwatch (branch_t t) id
 
   module Head = struct
     let list = Repo.heads
@@ -628,22 +548,6 @@ module Make_untyped (P : S.PRIVATE) = struct
         Branch_store.test_and_set (branch_t t) name ~test ~set >|= fun r ->
         if r then t.tree <- Some tree;
         r
-
-  type 'a write_error =
-    [ Merge.conflict | `Too_many_retries of int | `Test_was of 'a option ]
-
-  let pp_write_error elt_t ppf = function
-    | `Conflict e -> Fmt.pf ppf "Got a conflict: %s" e
-    | `Too_many_retries i ->
-        Fmt.pf ppf
-          "Failure after %d attempts to retry the operation: Too many attempts."
-          i
-    | `Test_was t ->
-        Fmt.pf ppf "Test-and-set failed: got %a when reading the store"
-          Type.(pp (option elt_t))
-          t
-
-  let write_error e : ('a, 'b write_error) result Lwt.t = Lwt.return_error e
 
   let err_test v = write_error (`Test_was v)
 
@@ -1036,44 +940,6 @@ module Make_untyped (P : S.PRIVATE) = struct
     in
     search []
 
-  module Branch = struct
-    include P.Branch.Key
-
-    let mem t = P.Branch.mem (P.Repo.branch_t t)
-
-    let find t br =
-      P.Branch.find (Repo.branch_t t) br >>= function
-      | None -> Lwt.return_none
-      | Some h -> Commit.of_hash t h
-
-    let set t br h = P.Branch.set (P.Repo.branch_t t) br (Commit.hash h)
-
-    let remove t = P.Branch.remove (P.Repo.branch_t t)
-
-    let list = Repo.branches
-
-    let watch t k ?init f =
-      let init = match init with None -> None | Some h -> Some h.Commit.h in
-      P.Branch.watch_key (Repo.branch_t t) k ?init (lift_head_diff t f)
-      >|= fun w () -> Branch_store.unwatch (Repo.branch_t t) w
-
-    let watch_all t ?init f =
-      let init =
-        match init with
-        | None -> None
-        | Some i -> Some (List.map (fun (k, v) -> (k, v.Commit.h)) i)
-      in
-      let f k v = lift_head_diff t (f k) v in
-      P.Branch.watch (Repo.branch_t t) ?init f >|= fun w () ->
-      Branch_store.unwatch (Repo.branch_t t) w
-
-    let err_not_found k =
-      Fmt.kstrf invalid_arg "Branch.get: %a not found" pp_branch k
-
-    let get t k =
-      find t k >>= function None -> err_not_found k | Some v -> Lwt.return v
-  end
-
   module Status = struct
     type t = [ `Empty | `Branch of branch | `Commit of commit ]
 
@@ -1101,10 +967,6 @@ module Make_untyped (P : S.PRIVATE) = struct
 
   let metadata_t = Metadata.t
 
-  let key_t = Key.t
-
-  let step_t = Key.step_t
-
   let node_t = Tree.node_t
 
   let commit_t = Commit.t
@@ -1112,41 +974,13 @@ module Make_untyped (P : S.PRIVATE) = struct
   let branch_t = Branch.t
 
   let kind_t = Type.enum "kind" [ ("contents", `Contents); ("node", `Node) ]
-
-  let lca_error_t =
-    Type.enum "lca-error"
-      [
-        ("max-depth-reached", `Max_depth_reached);
-        ("too-many-lcas", `Too_many_lcas);
-      ]
-
-  let ff_error_t =
-    Type.enum "ff-error"
-      [
-        ("max-depth-reached", `Max_depth_reached);
-        ("too-many-lcas", `Too_many_lcas);
-        ("no-change", `No_change);
-        ("rejected", `Rejected);
-      ]
-
-  let write_error_t : type a. a Type.t -> a write_error Type.t =
-   fun elt_t ->
-    let open Type in
-    variant "write-error" (fun c m e ->
-      function
-      | `Conflict x -> c x | `Too_many_retries x -> m x | `Test_was x -> e x)
-    |~ case1 "conflict" string (fun x -> `Conflict x)
-    |~ case1 "too-many-retries" int (fun x -> `Too_many_retries x)
-    |~ case1 "test-got" (option elt_t) (fun x -> `Test_was x)
-    |> sealv
-
-  let write_error_t : type a. a Type.t -> a write_error Type.t =
-   fun elt_t ->
-    let of_string _ = assert false in
-    Type.like ~cli:(pp_write_error elt_t, of_string) (write_error_t elt_t)
 end
 
-module Make_typed (P : S.PRIVATE) = struct end
+module Make_typed (P : S.PRIVATE) (Typ : Store_intf.TYPE) = struct
+  include Make (P)
+
+  type root = Typ.t
+end
 
 type S.remote += Store : (module Store_intf.S with type t = 'a) * 'a -> S.remote
 
@@ -1154,10 +988,16 @@ open Store_intf
 
 module type S = S
 
+module type TYPE = TYPE
+
 module type TYPED = TYPED
 
 module type TYPED_MAKER = TYPED_MAKER
 
+module type TYPED_OF_PRIVATE = TYPED_OF_PRIVATE
+
 module type UNTYPED = UNTYPED
 
 module type UNTYPED_MAKER = UNTYPED_MAKER
+
+module type UNTYPED_OF_PRIVATE = UNTYPED_OF_PRIVATE
