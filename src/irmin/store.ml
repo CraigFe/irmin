@@ -195,6 +195,24 @@ functor
         find t k >>= function None -> err_not_found k | Some v -> Lwt.return v
     end
 
+    module Status = struct
+      type t = [ `Empty | `Branch of branch | `Commit of commit ]
+
+      let t r =
+        let open Type in
+        variant "status" (fun empty branch commit ->
+            function
+            | `Empty -> empty | `Branch b -> branch b | `Commit c -> commit c)
+        |~ case0 "empty" `Empty
+        |~ case1 "branch" Branch.t (fun b -> `Branch b)
+        |~ case1 "commit" (Commit.t r) (fun c -> `Commit c)
+        |> sealv
+
+      let pp ppf = function
+        | `Empty -> Fmt.string ppf "empty"
+        | `Branch b -> Type.pp Branch.t ppf b
+        | `Commit c -> Type.pp Hash.t ppf (Commit.hash c)
+    end
   end
 
 module Make_untyped (P : S.PRIVATE) : Store_intf.UNTYPED = struct
@@ -332,7 +350,7 @@ module Make_untyped (P : S.PRIVATE) : Store_intf.UNTYPED = struct
 
   let empty repo = of_ref repo (`Head (ref None))
 
-  let of_commit c = of_ref c.Commit.r (`Head (ref (Some c)))
+  let of_commit c = of_ref (Commit.repo c) (`Head (ref (Some c)))
 
   let pp_key = Type.pp Key.t
 
@@ -939,25 +957,6 @@ module Make_untyped (P : S.PRIVATE) : Store_intf.UNTYPED = struct
           >>= fun found -> if found then search (current :: acc) else search acc
     in
     search []
-
-  module Status = struct
-    type t = [ `Empty | `Branch of branch | `Commit of commit ]
-
-    let t r =
-      let open Type in
-      variant "status" (fun empty branch commit ->
-        function
-        | `Empty -> empty | `Branch b -> branch b | `Commit c -> commit c)
-      |~ case0 "empty" `Empty
-      |~ case1 "branch" Branch.t (fun b -> `Branch b)
-      |~ case1 "commit" (Commit.t r) (fun c -> `Commit c)
-      |> sealv
-
-    let pp ppf = function
-      | `Empty -> Fmt.string ppf "empty"
-      | `Branch b -> Type.pp Branch.t ppf b
-      | `Commit c -> Type.pp Hash.t ppf (Commit.hash c)
-  end
 
   let slice_t = P.Slice.t
 

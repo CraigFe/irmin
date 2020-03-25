@@ -29,6 +29,8 @@ functor
 
     let equal x y = Type.equal Hash.t x.h y.h
 
+    let repo t = t.r
+
     let hash t = t.h
 
     let info t = P.Commit.Val.info t.v

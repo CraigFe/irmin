@@ -44,6 +44,8 @@ module type MAKER = functor
   val to_private_commit : t -> P.Commit.value
 
   val of_private_commit : P.Repo.t -> P.Commit.value -> t
+
+  val repo : t -> repo
 end
 with type repo := P.Repo.t
  and type hash := P.Hash.t
