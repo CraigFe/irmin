@@ -1,3 +1,5 @@
+module Witness = Irmin_type.Witness
+
 module Path = struct
   type nonrec ('s, 'a) t = {
     get : 's -> 'a option Lwt.t;
@@ -13,11 +15,12 @@ type 'a typ =
   | Typ_record : 'a record -> 'a typ
   | Typ_variant : 'a variant -> 'a typ
   | Typ_assoc : 'a Type.t -> 'a typ
+  | Typ_unit : unit typ
 
 (* Records *)
 and 'record record =
   | Record : {
-      r_witness : 'record Irmin_type.Witness.t;
+      r_witness : 'record Witness.t;
       r_name : string;
       r_fields : ('record, 'cons, _, _) fields;
       r_constructor : 'cons;
@@ -43,30 +46,34 @@ and ('record, 'constr, 'lens, 'lens_nil) fields =
 
 (* Variants *)
 and 'variant variant = {
-  v_witness : 'variant Irmin_type.Witness.t;
+  v_witness : 'variant Witness.t;
   v_name : string;
   v_cases : 'variant case_exists array;
   v_get : 'variant -> 'variant case_typeable;
 }
 
-and ('variant, 'arg) case = {
-  c_witness : 'arg Irmin_type.Witness.t;
-  c_tag : int;
-  c_name : string;
-  c_arg_type : 'arg Type.t;
-  c_constructor : 'arg -> 'variant;
-}
+and ('variant, 'arg, 'constr) case =
+  | Case : {
+      c_tag : int;
+      c_name : string;
+      c_type : 'arg typ;
+      c_constructor : 'arg -> 'variant;
+      c_witness : 'arg Witness.t;
+    }
+      -> ('variant, 'arg, 'arg -> 'variant case_typeable) case
 
 and 'variant case_exists =
-  | Case_exists : ('variant, 'arg) case -> 'variant case_exists
+  | Case_exists : ('variant, 'arg, 'constr) case -> 'variant case_exists
 
 and 'variant case_typeable =
-  | Case_typable : ('variant, 'case) case * 'case -> 'variant case_typeable
+  | Case_typeable :
+      ('variant, 'arg, 'constr) case * 'arg
+      -> 'variant case_typeable
 
 and ('variant, 'pat, 'pat_nil, 'prisms, 'prism_nil) cases =
   | Cases_nil : ('variant, 'pat_nil, 'pat_nil, 'prism_nil, 'prism_nil) cases
   | Cases_cons :
-      ('variant, 'case) case
+      ('variant, 'case, 'constr) case
       * ('variant, 'remaining, 'pat_nil, 'prisms, 'prism_nil) cases
       -> ( 'variant,
            'constr -> 'remaining,
@@ -74,6 +81,8 @@ and ('variant, 'pat, 'pat_nil, 'prisms, 'prism_nil) cases =
            ('variant, 'case) Path.t * 'prisms,
            'prism_nil )
          cases
+
+type 'a t = 'a typ
 
 (** Generic combinators for product types **)
 module Record = struct
@@ -124,7 +133,7 @@ module Record = struct
       record_t record * (lens, unit) Path.hlist =
    fun { open_record = r } ->
     let Unwitnessed.{ name; cons; fields } = r Fields_nil in
-    let r_witness = Irmin_type.Witness.make () in
+    let r_witness = Witness.make () in
     let lenses =
       let rec inner :
           type a l. (record_t, a, l, unit) fields -> (l, unit) Path.hlist =
@@ -145,7 +154,7 @@ end
 
 (** Generic combinators for sum types *)
 module Variant = struct
-  type ('v, 'pat, 'rem, 'rem_nil, 'prism, 'prism_nil, 'm) open_variant = {
+  type ('v, 'pat, 'rem, 'rem_nil, 'prism, 'prism_nil) open_variant = {
     open_variant :
       'hole1 'hole2. ('v, 'rem_nil, 'hole1, 'prism_nil, 'hole2) cases ->
       string * 'hole1 * ('v, 'rem, 'hole1, 'prism, 'hole2) cases;
@@ -157,107 +166,115 @@ module Variant = struct
       pat -> (v, pat, pat_nil, opt, opt_nil) cases -> pat_nil =
    fun p -> function
     | Cases_nil -> p
-    | Cases_cons (case, cs) ->
-        add_cases_to_destructor (p (fun v -> Case_typeable (case, v))) cs
+    | Cases_cons (Case case, cs) ->
+        add_cases_to_destructor (p (fun v -> Case_typeable (Case case, v))) cs
 
-  let variant : string -> 'p -> ('v, 'p, 'r, 'r, 'opt, 'opt, 'm) open_variant =
+  let variant : string -> 'p -> ('v, 'p, 'r, 'r, 'opt, 'opt) open_variant =
    fun n p ->
     let open_variant cs = (n, add_cases_to_destructor p cs, cs) in
     { open_variant; next_tag = 0 }
 
+  (** Cases are accumulated while their tags remain unknown. Tags are assigned
+      when the variant is sealed. *)
+  type ('v, 'case, 'constr) untagged_case =
+    | Untagged of (int -> ('v, 'case, 'constr) case)
+  [@@unboxed]
+
   let ( |~ ) :
-      type v c constr pat rem rem_nil opt opt_nil m.
+      type v c constr pat rem rem_nil opt opt_nil.
       ( v,
         pat,
         rem,
         constr -> rem_nil,
         opt,
-        (v, c) Path.t * opt_nil,
-        m )
+        (v, c) Path.t * opt_nil )
       open_variant ->
-      (v, c) case ->
-      (v, pat, rem, rem_nil, opt, opt_nil, m) open_variant =
-   fun { open_variant = previous; next_tag } case ->
+      (v, c, constr) untagged_case ->
+      (v, pat, rem, rem_nil, opt, opt_nil) open_variant =
+   fun { open_variant = previous; next_tag } (Untagged case) ->
     let open_variant' cs = previous (Cases_cons (case next_tag, cs)) in
     { open_variant = open_variant'; next_tag = next_tag + 1 }
 
   let array_of_case_list cases =
     let rec inner :
-        type variant pat pat_nil pri pri_nil m.
-        (variant, pat, pat_nil, pri, pri_nil, m) cases -> variant a_case list =
-      function
+        type variant pat pat_nil pri pri_nil.
+        (variant, pat, pat_nil, pri, pri_nil) cases -> variant case_exists list
+        = function
       | Cases_nil -> []
-      | Cases_cons (C0 c, cs) -> CP0 c :: inner cs
-      | Cases_cons (C1 c, cs) -> CP1 c :: inner cs
+      | Cases_cons (c, cs) -> Case_exists c :: inner cs
     in
     inner cases |> Array.of_list
 
-  let preview : type v c. (v -> v case_v) -> c Witness.t -> int -> v -> c option
-      =
+  let preview :
+      type v c. (v -> v case_typeable) -> c Witness.t -> int -> v -> c option =
    fun vget type_expected tag_expected v ->
-    vget v |> function
-    | CV1 ({ ctag1 = tag_actual; c1_witness = type_actual; _ }, elt) ->
-        if tag_actual = tag_expected then
-          Witness.cast type_actual type_expected elt
-        else None
-    | CV0 _ -> None
+    let (Case_typeable
+          (Case { c_tag = tag_actual; c_witness = type_actual; _ }, elt)) =
+      vget v
+    in
+    if tag_actual = tag_expected then Witness.cast type_actual type_expected elt
+    else None
+
+  let paths_of_cases (type variant) (v_get : variant -> variant case_typeable) =
+    let rec inner :
+        type a b paths.
+        (variant, a, b, paths, unit) cases -> (paths, unit) Path.hlist =
+      function
+      | Cases_nil -> []
+      | Cases_cons
+          ( Case
+              {
+                c_constructor;
+                c_tag = tag_expected;
+                c_witness = type_expected;
+                _;
+              },
+            cs ) ->
+          let update s a =
+            let (Case_typeable (Case { c_tag = tag_actual; _ }, _)) = v_get s in
+            (if Int.equal tag_actual tag_expected then c_constructor a else s)
+            |> Lwt.return
+          in
+          let get s =
+            preview v_get type_expected tag_expected s |> Lwt.return
+          in
+          let path = Path.{ get; update } in
+          path :: inner cs
+    in
+    inner
 
   let seal :
-      type variant pat prisms m.
+      type variant pat prisms.
       ( variant,
         pat,
         pat,
-        variant -> variant case_v,
+        variant -> variant case_typeable,
         prisms,
-        unit,
-        m )
+        unit )
       open_variant ->
-      variant t * (m monad -> (prisms, m) Prism.t_list) =
+      variant typ * (prisms, unit) Path.hlist =
    fun { open_variant = v; _ } ->
-    let vname, vget, cases = v Cases_nil in
-    let vget v = vget v in
-    let vwit = Witness.make () in
-    let vcases = array_of_case_list cases in
-    let prisms (monad : m monad) =
-      let rec inner :
-          type p a b. (variant, a, b, p, unit, m) cases -> (p, m) Prism.t_list =
-        function
-        | Cases_nil -> []
-        | Cases_cons (C0 { c0; ctag0 = tag_expected; _ }, cs) ->
-            let review () = monad#return c0 in
-            let preview v =
-              vget v
-              |> (function
-                   | CV0 { ctag0 = tag_actual; _ } ->
-                       if tag_actual = tag_expected then Some () else None
-                   | CV1 _ -> None)
-              |> monad#return
-            in
-            Prism.v monad review preview :: inner cs
-        | Cases_cons
-            (C1 { c1; ctag1 = tag_expected; c1_witness = type_expected; _ }, cs)
-          ->
-            let review b = monad#return (c1 b) in
-            let preview s =
-              preview vget type_expected tag_expected s |> monad#return
-            in
-            Prism.v monad review preview :: inner cs
-      in
-      inner cases
-    in
-    (Variant { vwit; vname; vcases; vget }, prisms)
+    let v_name, v_get, cases = v Cases_nil in
+    let v_witness = Witness.make () in
+    let v_cases = array_of_case_list cases in
+    let paths = paths_of_cases v_get cases in
+    (Typ_variant { v_witness; v_name; v_cases; v_get }, paths)
 
-  type 'a case_p = 'a case_v
+  let case1 c_name c_type c_constructor =
+    Untagged
+      (fun c_tag ->
+        Case
+          { c_tag; c_name; c_type; c_constructor; c_witness = Witness.make () })
 
-  let case1 c_name c_arg_type c_constructor c_tag =
-    {
-      c_witness = Irmin_type.Witness.make ();
-      c_tag;
-      c_name;
-      c_arg_type;
-      c_constructor;
-    }
-
-  let case0 c_name c_singleton c_tag =
-    case1 c_name Type.unit (fun () -> c_singleton) c_tag
+  let case0 c_name c_singleton =
+    Untagged
+      (fun c_tag ->
+        Case
+          {
+            c_tag;
+            c_name;
+            c_type = Typ_unit;
+            c_constructor = (fun () -> c_singleton);
+            c_witness = Witness.make ();
+          })
 end
