@@ -170,7 +170,7 @@ end
 module type APPEND_ONLY_STORE = sig
   (** {1 Append-only stores}
 
-      Append-onlye stores are store where it is possible to read and add new
+      Append-only stores are store where it is possible to read and add new
       values. *)
 
   type 'a t
@@ -194,8 +194,8 @@ module type APPEND_ONLY_STORE = sig
   (** Write the contents of a value to the store. *)
 end
 
-module type APPEND_ONLY_STORE_MAKER = functor (K : Type.S) (V : Type.S) -> sig
-  include APPEND_ONLY_STORE with type key = K.t and type value = V.t
+module type APPEND_ONLY_STORE_EXT = sig
+  include APPEND_ONLY_STORE
 
   val batch : [ `Read ] t -> ([ `Read | `Write ] t -> 'a Lwt.t) -> 'a Lwt.t
 
@@ -203,6 +203,65 @@ module type APPEND_ONLY_STORE_MAKER = functor (K : Type.S) (V : Type.S) -> sig
 
   val close : 'a t -> unit Lwt.t
 end
+
+module type POLY_KEY = sig
+  type 'value t
+  (** The type of {i polymorphic} keys (keys that may point to values of more
+      than one type). *)
+
+  type mono
+
+  val hide : _ t -> mono
+
+  type pickled
+
+  val pickle : 'value t -> 'value -> pickled
+
+  val unpickle : 'value t -> pickled -> 'value option
+
+  (** {1 Value types} *)
+
+  val t : 'value t Type.t
+
+  val mono_t : mono Type.t
+
+  val pickled_t : pickled Type.t
+end
+
+module type TYPED_APPEND_ONLY_STORE = sig
+  type 'a t
+  (** The type for append-only backend stores. The ['a] phantom type carries
+      information about the store mutability. *)
+
+  type 'value key
+  (** The type for keys. *)
+
+  val mem : [> `Read ] t -> _ key -> bool Lwt.t
+  (** [mem t k] is true iff [k] is present in [t]. *)
+
+  val find : [> `Read ] t -> 'value key -> 'value option Lwt.t
+  (** [find t k] is [Some v] if [k] is associated to [v] in [t] and [None] is
+      [k] is not present in [t]. *)
+
+  val add : [> `Write ] t -> 'value key -> 'value -> unit Lwt.t
+  (** Write the contents of a value to the store. *)
+end
+
+module type TYPED_APPEND_ONLY_STORE_EXT = sig
+  include TYPED_APPEND_ONLY_STORE
+
+  val batch : [ `Read ] t -> ([ `Read | `Write ] t -> 'a Lwt.t) -> 'a Lwt.t
+
+  val v : Conf.t -> [ `Read ] t Lwt.t
+
+  val close : 'a t -> unit Lwt.t
+end
+
+module type APPEND_ONLY_STORE_MAKER = functor (K : Type.S) (V : Type.S) ->
+  APPEND_ONLY_STORE_EXT with type key = K.t and type value = V.t
+
+module type TYPED_APPEND_ONLY_STORE_MAKER = functor (K : POLY_KEY) ->
+  TYPED_APPEND_ONLY_STORE_EXT with type 'v key = 'v K.t
 
 module type METADATA = sig
   type t

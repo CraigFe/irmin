@@ -18,6 +18,7 @@ open Lwt.Infix
 module Type = Type
 module Diff = Diff
 module Content_addressable = Store.Content_addressable
+module Lift_append_only_maker = Store.Lift_append_only_maker
 
 module Contents = struct
   include Contents
@@ -290,6 +291,10 @@ module type CONTENT_ADDRESSABLE_STORE = S.CONTENT_ADDRESSABLE_STORE
 
 module type APPEND_ONLY_STORE = S.APPEND_ONLY_STORE
 
+module type POLY_KEY = S.POLY_KEY
+
+module type TYPED_APPEND_ONLY_STORE = S.TYPED_APPEND_ONLY_STORE
+
 module type ATOMIC_WRITE_STORE = S.ATOMIC_WRITE_STORE
 
 module type TREE = S.TREE
@@ -303,6 +308,8 @@ type 'a diff = 'a Diff.t
 module type CONTENT_ADDRESSABLE_STORE_MAKER = S.CONTENT_ADDRESSABLE_STORE_MAKER
 
 module type APPEND_ONLY_STORE_MAKER = S.APPEND_ONLY_STORE_MAKER
+
+module type TYPED_APPEND_ONLY_STORE_MAKER = S.TYPED_APPEND_ONLY_STORE_MAKER
 
 module type ATOMIC_WRITE_STORE_MAKER = S.ATOMIC_WRITE_STORE_MAKER
 

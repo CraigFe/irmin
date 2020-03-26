@@ -1142,6 +1142,56 @@ end
 
 type S.remote += Store : (module Store_intf.S with type t = 'a) * 'a -> S.remote
 
+module Lift_append_only
+    (Key : S.POLY_KEY)
+    (Untyped : S.APPEND_ONLY_STORE_EXT
+                 with type key = Key.mono
+                  and type value = Key.pickled) =
+struct
+  let ( >>=? ) : type a b. a option Lwt.t -> (a -> b option) -> b option Lwt.t =
+   fun x f -> Lwt.map (fun x -> Option.bind x f) x
+
+  type 'a t = 'a Untyped.t
+
+  type 'value key = 'value Key.t
+
+  let mem t k = Untyped.mem t (Key.hide k)
+
+  let find t k = Untyped.find t (Key.hide k) >>=? Key.unpickle k
+
+  let add t k v = Untyped.add t (Key.hide k) (Key.pickle k v)
+
+  let batch = Untyped.batch
+
+  let v = Untyped.v
+
+  let close = Untyped.close
+end
+
+module Lift_append_only_maker : functor (_ : S.APPEND_ONLY_STORE_MAKER) ->
+  S.TYPED_APPEND_ONLY_STORE_MAKER =
+functor
+  (Make_untyped : S.APPEND_ONLY_STORE_MAKER)
+  (Key : S.POLY_KEY)
+  ->
+  struct
+    module Untyped_key = struct
+      type t = Key.mono
+
+      let t = Key.mono_t
+    end
+
+    module Untyped_value = struct
+      type t = Key.pickled
+
+      let t = Key.pickled_t
+    end
+
+    module Untyped = Make_untyped (Untyped_key) (Untyped_value)
+    module Typed = Lift_append_only (Key) (Untyped)
+    include Typed
+  end
+
 module type S = Store_intf.S
 
 module type MAKER = Store_intf.MAKER

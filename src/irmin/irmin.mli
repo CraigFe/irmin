@@ -73,6 +73,16 @@ module type APPEND_ONLY_STORE = sig
   (** @inline *)
 end
 
+module type POLY_KEY = sig
+  include S.POLY_KEY
+  (** @inline *)
+end
+
+module type TYPED_APPEND_ONLY_STORE = sig
+  include S.TYPED_APPEND_ONLY_STORE
+  (** @inline *)
+end
+
 (** Atomic-write stores. *)
 module type ATOMIC_WRITE_STORE = sig
   include S.ATOMIC_WRITE_STORE
@@ -793,24 +803,15 @@ module Dot (S : S) : Dot.S with type db = S.t
       internal stores into separate store, with total control over the binary
       format and using the native synchronization protocols when available. *)
 
+module type APPEND_ONLY_STORE_MAKER = S.APPEND_ONLY_STORE_MAKER
 (** [APPEND_ONLY_STORE_MAKER] is the signature exposed by append-only store
     backends. [K] is the implementation of keys and [V] is the implementation of
     values. *)
-module type APPEND_ONLY_STORE_MAKER = functor (K : Type.S) (V : Type.S) -> sig
-  include APPEND_ONLY_STORE with type key = K.t and type value = V.t
 
-  val batch : [ `Read ] t -> ([ `Read | `Write ] t -> 'a Lwt.t) -> 'a Lwt.t
-  (** [batch t f] applies the writes in [f] in a separate batch. The exact
-      guarantees depends on the backends. *)
+module type TYPED_APPEND_ONLY_STORE_MAKER = S.TYPED_APPEND_ONLY_STORE_MAKER
 
-  val v : config -> [ `Read ] t Lwt.t
-  (** [v config] is a function returning fresh store handles, with the
-      configuration [config], which is provided by the backend. *)
-
-  val close : 'a t -> unit Lwt.t
-  (** [close t] frees up all the resources associated to [t]. Any operations run
-      on a closed store will raise {!Closed}. *)
-end
+module Lift_append_only_maker : functor (_ : APPEND_ONLY_STORE_MAKER) ->
+  TYPED_APPEND_ONLY_STORE_MAKER
 
 (** [CONTENT_ADDRESSABLE_STOREMAKER] is the signature exposed by
     content-addressable store backends. [K] is the implementation of keys and

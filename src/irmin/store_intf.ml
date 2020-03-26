@@ -881,4 +881,7 @@ module type Store = sig
 
     val close : 'a t -> unit Lwt.t
   end
+
+  module Lift_append_only_maker : functor (_ : Sigs.APPEND_ONLY_STORE_MAKER) ->
+    Sigs.TYPED_APPEND_ONLY_STORE_MAKER
 end
