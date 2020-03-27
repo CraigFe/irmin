@@ -1145,8 +1145,8 @@ type S.remote += Store : (module Store_intf.S with type t = 'a) * 'a -> S.remote
 module Lift_append_only
     (Key : S.POLY_KEY)
     (Untyped : S.APPEND_ONLY_STORE_EXT
-                 with type key = Key.mono
-                  and type value = Key.pickled) =
+                 with type key = Key.Mono.t
+                  and type value = Key.Pickled.t) =
 struct
   let ( >>=? ) : type a b. a option Lwt.t -> (a -> b option) -> b option Lwt.t =
    fun x f -> Lwt.map (fun x -> Option.bind x f) x
@@ -1157,9 +1157,9 @@ struct
 
   let mem t k = Untyped.mem t (Key.hide k)
 
-  let find t k = Untyped.find t (Key.hide k) >>=? Key.unpickle k
+  let find t k = Untyped.find t (Key.hide k) >>=? Key.(unpickle (to_pickler k))
 
-  let add t k v = Untyped.add t (Key.hide k) (Key.pickle k v)
+  let add t k v = Untyped.add t (Key.hide k) Key.(pickle (to_pickler k) v)
 
   let batch = Untyped.batch
 
@@ -1175,11 +1175,12 @@ functor
   (Key : S.POLY_KEY)
   ->
   struct
-    module Untyped_key = struct
-      type t = Key.mono
+    module Untyped = Make_untyped (Key.Mono) (Key.Pickled)
+    (** [Untyped] is keyed by the monomorphic representation of keys and stores
+        pickled values. *)
 
-      let t = Key.mono_t
-    end
+    include Lift_append_only (Key) (Untyped)
+  end
 
     module Untyped_value = struct
       type t = Key.pickled

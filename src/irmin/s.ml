@@ -120,6 +120,37 @@ module type CONTENTS = sig
       key's value should be deleted. *)
 end
 
+module type PICKLER = sig
+  type 'value t
+
+  module Pickled : Type.S
+
+  val pickle : 'value t -> 'value -> Pickled.t
+
+  val unpickle : 'value t -> Pickled.t -> 'value option
+end
+
+module type POLY_KEY = sig
+  type 'value t
+  (** The type of {i polymorphic} keys (keys that may point to values of more
+      than one type). *)
+
+  type 'value pickler
+  (** Poly keys can be used to pickle and unpickle values. *)
+
+  include PICKLER with type 'a t := 'a pickler
+
+  val to_pickler : 'value t -> 'value pickler
+
+  (** Poly keys have an underlying hash representation. *)
+
+  module Mono : HASH
+
+  val hide : _ t -> Mono.t
+
+  val recover : 'value pickler -> Mono.t -> 'value t
+end
+
 module type CONTENT_ADDRESSABLE_STORE = sig
   (** {1 Content-addressable stores}
 
@@ -202,30 +233,6 @@ module type APPEND_ONLY_STORE_EXT = sig
   val v : Conf.t -> [ `Read ] t Lwt.t
 
   val close : 'a t -> unit Lwt.t
-end
-
-module type POLY_KEY = sig
-  type 'value t
-  (** The type of {i polymorphic} keys (keys that may point to values of more
-      than one type). *)
-
-  type mono
-
-  val hide : _ t -> mono
-
-  type pickled
-
-  val pickle : 'value t -> 'value -> pickled
-
-  val unpickle : 'value t -> pickled -> 'value option
-
-  (** {1 Value types} *)
-
-  val t : 'value t Type.t
-
-  val mono_t : mono Type.t
-
-  val pickled_t : pickled Type.t
 end
 
 module type TYPED_APPEND_ONLY_STORE = sig
