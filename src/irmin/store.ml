@@ -1182,15 +1182,43 @@ functor
     include Lift_append_only (Key) (Untyped)
   end
 
-    module Untyped_value = struct
-      type t = Key.pickled
+module Lift_content_addressable
+    (Key : S.POLY_KEY)
+    (Untyped : S.CONTENT_ADDRESSABLE_STORE_EXT
+                 with type key = Key.Mono.t
+                  and type value = Key.Pickled.t) =
+struct
+  let ( >>=? ) : type a b. a option Lwt.t -> (a -> b option) -> b option Lwt.t =
+   fun x f -> Lwt.map (fun x -> Option.bind x f) x
 
-      let t = Key.pickled_t
-    end
+  type 'a t = 'a Untyped.t
 
-    module Untyped = Make_untyped (Untyped_key) (Untyped_value)
-    module Typed = Lift_append_only (Key) (Untyped)
-    include Typed
+  type 'value key = 'value Key.t
+
+  let mem t k = Untyped.mem t (Key.hide k)
+
+  let find t k = Untyped.find t (Key.hide k) >>=? Key.(unpickle (to_pickler k))
+
+  let add t typ v = Untyped.add t (Key.pickle typ v) >|= Key.recover typ
+
+  let unsafe_add t k v =
+    Untyped.unsafe_add t (Key.hide k) Key.(pickle (to_pickler k) v)
+
+  let batch, v, close = Untyped.(batch, v, close)
+end
+
+module Lift_content_addressable_maker : functor
+  (_ : S.CONTENT_ADDRESSABLE_STORE_MAKER)
+  -> S.TYPED_CONTENT_ADDRESSABLE_STORE_MAKER =
+functor
+  (Make_untyped : S.CONTENT_ADDRESSABLE_STORE_MAKER)
+  (Key : S.POLY_KEY)
+  ->
+  struct
+    module Untyped = Make_untyped (Key.Mono) (Key.Pickled)
+    include Lift_content_addressable (Key) (Untyped)
+
+    type 'value typ = 'value Key.pickler
   end
 
 module type S = Store_intf.S

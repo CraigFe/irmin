@@ -185,11 +185,8 @@ module type CONTENT_ADDRESSABLE_STORE = sig
       consistent. *)
 end
 
-module type CONTENT_ADDRESSABLE_STORE_MAKER = functor
-  (K : HASH)
-  (V : Type.S)
-  -> sig
-  include CONTENT_ADDRESSABLE_STORE with type key = K.t and type value = V.t
+module type CONTENT_ADDRESSABLE_STORE_EXT = sig
+  include CONTENT_ADDRESSABLE_STORE
 
   val batch : [ `Read ] t -> ([ `Read | `Write ] t -> 'a Lwt.t) -> 'a Lwt.t
 
@@ -197,6 +194,50 @@ module type CONTENT_ADDRESSABLE_STORE_MAKER = functor
 
   val close : 'a t -> unit Lwt.t
 end
+
+module type CONTENT_ADDRESSABLE_STORE_MAKER = functor (K : HASH) (V : Type.S) ->
+  CONTENT_ADDRESSABLE_STORE_EXT with type key = K.t and type value = V.t
+
+module type TYPED_CONTENT_ADDRESSABLE_STORE = sig
+  type 'a t
+  (** The type for content-addressable backend stores. The ['a] phantom type
+      carries information about the store mutability. *)
+
+  type 'value key
+  (** The type for keys. *)
+
+  type 'value typ
+  (** The type of value-types of a key *)
+
+  val mem : [> `Read ] t -> _ key -> bool Lwt.t
+  (** [mem t k] is true iff [k] is present in [t]. *)
+
+  val find : [> `Read ] t -> 'value key -> 'value option Lwt.t
+  (** [find t k] is [Some v] if [k] is associated to [v] in [t] and [None] is
+      [k] is not present in [t]. *)
+
+  val add : [> `Write ] t -> 'value typ -> 'value -> 'value key Lwt.t
+  (** Write the contents of a value to the store. It's the responsibility of the
+      content-addressable store to generate a consistent key. *)
+
+  val unsafe_add : [> `Write ] t -> 'value key -> 'value -> unit Lwt.t
+  (** Same as {!add} but allows to specify the key directly. The backend might
+      choose to discared that key and/or can be corrupt if the key scheme is not
+      consistent. *)
+end
+
+module type TYPED_CONTENT_ADDRESSABLE_STORE_EXT = sig
+  include TYPED_CONTENT_ADDRESSABLE_STORE
+
+  val batch : [ `Read ] t -> ([ `Read | `Write ] t -> 'a Lwt.t) -> 'a Lwt.t
+
+  val v : Conf.t -> [ `Read ] t Lwt.t
+
+  val close : 'a t -> unit Lwt.t
+end
+
+module type TYPED_CONTENT_ADDRESSABLE_STORE_MAKER = functor (K : POLY_KEY) ->
+  TYPED_CONTENT_ADDRESSABLE_STORE_EXT with type 'a key = 'a K.t
 
 module type APPEND_ONLY_STORE = sig
   (** {1 Append-only stores}
