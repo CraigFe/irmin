@@ -14,6 +14,16 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
+module type PICKLER = sig
+  type 'a t
+
+  module Pickled : Type.S
+
+  val pickle : 'value t -> 'value -> Pickled.t
+
+  val unpickle : 'value t -> Pickled.t -> 'value option
+end
+
 module type PATH = sig
   type 'a assoc
 
@@ -53,7 +63,20 @@ module type S = sig
       this type can be used to build Irmin stores containing more than one
       content type. *)
 
+  val merge : ('a, _) t -> 'a Merge.t
+  (** Shapes imply a merge operator. *)
+
+  val type_ : ('a, _) t -> 'a Type.t
+  (** Shapes imply a serialisation format. *)
+
   type empty = |
+
+  type 'a addr
+  (** Indirection via a store *)
+
+  val addr : ('a, 'b) t -> ('a addr, 'b) t
+
+  val addr_t : 'a Type.t -> 'a addr Type.t
 
   type 'a assoc
   (** An [s assoc] is the type of a map from strings to stores of type [s t]. *)
@@ -82,9 +105,10 @@ module type S = sig
       [l]. Stores with such types can be indexed with the {!Path.steps}
       constructor. *)
 
-  val primitive : 'a Type.t -> ('a, 'a) t
-  (** [primitive t] represents the type of stores containing a single value of
-      type [t]. Stores with such types can be indexed with the {!Path.id} path. *)
+  val primitive : 'a Type.t -> 'a Merge.t -> ('a, 'a) t
+  (** [primitive t m] represents the type of stores containing a single value of
+      type [t] with merge operation [m]. Stores with such types can be indexed
+      with the {!Path.id} path. *)
 
   module Path : PATH with type 'a assoc := 'a assoc and type 'a tree := 'a tree
 
@@ -123,6 +147,7 @@ module type S = sig
 
   val sealr :
     ('record, 'constructor, 'record, 'paths, unit) open_record ->
+    'record Type.t ->
     ('record, empty) t * 'paths Path.hlist
 
   (** {1 Variant types} *)
@@ -200,10 +225,12 @@ module type S = sig
       'paths,
       unit )
     open_variant ->
+    'variant Type.t ->
     ('variant, empty) t * 'paths Path.hlist
 end
 
-module type MAKER = functor (Step : Type.S) -> S with type step = Step.t
+module type MAKER = functor (Step : Type.S) (_ : Type.S) (Addr : Type.S2) ->
+  S with type step = Step.t
 
 module type Typed_tree = sig
   module type PATH = PATH

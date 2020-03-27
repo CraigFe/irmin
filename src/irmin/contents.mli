@@ -50,14 +50,38 @@ module V1 : sig
   module String : S.CONTENTS with type t = string
 end
 
-module Store (C : sig
+(** [CONTENT_ADDRESSABLE_STORE_EXT] is {!S.CONTENT_ADDRESSABLE_STORE} with the
+    requirements that the keys are {!S.HASH}es and the values are {!S.CONTENTS}. *)
+module type CONTENT_ADDRESSABLE_STORE_EXT = sig
   include S.CONTENT_ADDRESSABLE_STORE
 
   module Key : S.HASH with type t = key
 
   module Val : S.CONTENTS with type t = value
-end) :
+end
+
+module type MAKER = functor (C : CONTENT_ADDRESSABLE_STORE_EXT) ->
   S.CONTENTS_STORE
     with type 'a t = 'a C.t
      and type key = C.key
      and type value = C.value
+
+module Store : MAKER
+
+(** [TYPED_CONTENT_ADDRESSABLE_STORE_EXT] is
+    {!S.TYPED_CONTENT_ADDRESSABLE_STORE} with the requirements that keys have a
+    {!S.HASH} representation and the values are sub-components of a root type
+    described by {!S.TYPED_CONTENTS}. *)
+module type TYPED_CONTENT_ADDRESSABLE_STORE_EXT = sig
+  include S.TYPED_CONTENT_ADDRESSABLE_STORE
+
+  module Key :
+    S.POLY_KEY with type 'value t = 'value key and type 'value typ = 'value typ
+
+  module Root : S.TYPED_CONTENTS with type ('a, _) Shape.t = 'a Key.typ
+end
+
+module type TYPED_MAKER = functor (C : TYPED_CONTENT_ADDRESSABLE_STORE_EXT) ->
+  S.TYPED_CONTENTS_STORE
+
+module Typed_store : TYPED_MAKER

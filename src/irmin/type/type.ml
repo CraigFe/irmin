@@ -313,12 +313,6 @@ let map ?cli ?json ?bin ?equal ?compare ?short_hash ?pre_hash x f g =
       let x = Map { x; f; g; mwit = Witness.make () } in
       like ?cli ?json ?bin ?equal ?compare ?short_hash ?pre_hash x
 
-module type S = sig
-  type t
-
-  val t : t ty
-end
-
 let equal, compare = Type_ordered.(equal, compare)
 
 let pp, pp_ty, to_string, of_string = Type_pp.(t, ty, to_string, of_string)
@@ -335,3 +329,15 @@ let encode_bin, decode_bin, to_bin_string, of_bin_string =
   Type_binary.(encode_bin, decode_bin, to_bin_string, of_bin_string)
 
 let size_of = Type_size.t
+
+module type S = sig
+  type t
+
+  val t : t ty
+end
+
+module type S2 = sig
+  type 'a t
+
+  val t : 'a ty -> 'a t ty
+end

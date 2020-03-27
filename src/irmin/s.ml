@@ -103,6 +103,19 @@ module type TYPED_HASH = sig
   (** [t] is the value type for {!t}. *)
 end
 
+(** [POLY_HASH] generalises [TYPE_HASH] to generic hash functions. *)
+module type POLY_HASH = sig
+  type 'value t
+
+  type 'value typ
+
+  val hash : 'value typ -> 'value -> 'value t
+
+  val short_hash : _ t -> int
+
+  val hash_size : int
+end
+
 module type CONTENTS = sig
   (** {1 Signature for store contents} *)
 
@@ -120,6 +133,16 @@ module type CONTENTS = sig
       key's value should be deleted. *)
 end
 
+module type TYPED_CONTENTS = sig
+  type t
+
+  type concrete
+
+  module Shape : Typed_tree.S
+
+  val t : (t, concrete) Shape.t
+end
+
 module type PICKLER = sig
   type 'value t
 
@@ -135,12 +158,14 @@ module type POLY_KEY = sig
   (** The type of {i polymorphic} keys (keys that may point to values of more
       than one type). *)
 
-  type 'value pickler
+  val t : 'value Type.t -> 'value t Type.t
+
+  type 'value typ
   (** Poly keys can be used to pickle and unpickle values. *)
 
-  include PICKLER with type 'a t := 'a pickler
+  include PICKLER with type 'value t := 'value typ
 
-  val to_pickler : 'value t -> 'value pickler
+  val to_pickler : 'value t -> 'value typ
 
   (** Poly keys have an underlying hash representation. *)
 
@@ -148,7 +173,7 @@ module type POLY_KEY = sig
 
   val hide : _ t -> Mono.t
 
-  val recover : 'value pickler -> Mono.t -> 'value t
+  val recover : 'value typ -> Mono.t -> 'value t
 end
 
 module type CONTENT_ADDRESSABLE_STORE = sig
@@ -325,6 +350,8 @@ module type METADATA = sig
   (** The default metadata to attach, for APIs that don't care about metadata. *)
 end
 
+(** [CONTENTS_STORE] lifts the notion of a [CONTENT_ADDRESSABLE_STORE] to be
+    capable of merging stored values. *)
 module type CONTENTS_STORE = sig
   include CONTENT_ADDRESSABLE_STORE
 
@@ -342,6 +369,17 @@ module type CONTENTS_STORE = sig
 
   module Val : CONTENTS with type t = value
   (** [Val] provides base functions for user-defined contents values. *)
+end
+
+module type TYPED_CONTENTS_STORE = sig
+  include TYPED_CONTENT_ADDRESSABLE_STORE
+
+  val merge : [ `Read | `Write ] t -> 'value typ -> 'value key option Merge.t
+
+  module Key : POLY_KEY with type 'value t = 'value key
+  (** [Key] provides base functions for user-defined contents keys. *)
+
+  module Root : TYPED_CONTENTS with type ('a, _) Shape.t = 'a typ
 end
 
 module type NODE = sig

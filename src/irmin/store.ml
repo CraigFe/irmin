@@ -1218,7 +1218,7 @@ functor
     module Untyped = Make_untyped (Key.Mono) (Key.Pickled)
     include Lift_content_addressable (Key) (Untyped)
 
-    type 'value typ = 'value Key.pickler
+    type 'value typ = 'value Key.typ
   end
 
 module type S = Store_intf.S

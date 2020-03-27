@@ -489,3 +489,9 @@ module type S = sig
 
   val t : t ty
 end
+
+module type S2 = sig
+  type 'a t
+
+  val t : 'a ty -> 'a t ty
+end

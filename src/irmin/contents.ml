@@ -264,14 +264,21 @@ end
 
 module type STORE = S.CONTENTS_STORE
 
-module Store (S : sig
+module type CONTENT_ADDRESSABLE_STORE_EXT = sig
   include S.CONTENT_ADDRESSABLE_STORE
 
   module Key : S.HASH with type t = key
 
   module Val : S.CONTENTS with type t = value
-end) =
-struct
+end
+
+module type MAKER = functor (C : CONTENT_ADDRESSABLE_STORE_EXT) ->
+  S.CONTENTS_STORE
+    with type 'a t = 'a C.t
+     and type key = C.key
+     and type value = C.value
+
+module Store (S : CONTENT_ADDRESSABLE_STORE_EXT) = struct
   module Key = Hash.Typed (S.Key) (S.Val)
   module Val = S.Val
 
@@ -313,4 +320,36 @@ module V1 = struct
 
     let t = Type.like t ~bin:(encode_bin, decode_bin, size_of)
   end
+end
+
+module type TYPED_CONTENT_ADDRESSABLE_STORE_EXT = sig
+  include S.TYPED_CONTENT_ADDRESSABLE_STORE
+
+  module Key :
+    S.POLY_KEY with type 'value t = 'value key and type 'value typ = 'value typ
+
+  module Root : S.TYPED_CONTENTS with type ('a, _) Shape.t = 'a Key.typ
+end
+
+module type TYPED_MAKER = functor (C : TYPED_CONTENT_ADDRESSABLE_STORE_EXT) ->
+  S.TYPED_CONTENTS_STORE
+
+module Typed_store (S : TYPED_CONTENT_ADDRESSABLE_STORE_EXT) = struct
+  include S
+
+  let read_opt : type v. _ t -> v key option -> v option Lwt.t =
+   fun t -> function None -> Lwt.return_none | Some k -> find t k
+
+  let add_opt : type v. _ t -> v typ -> v option -> v key option Lwt.t =
+   fun t typ -> function
+    | None -> Lwt.return_none
+    | Some v -> add t typ v >>= Lwt.return_some
+
+  let merge : type v. _ t -> v typ -> v key option Merge.t =
+   fun t typ ->
+    let generic : v key option Type.t =
+      Type.option (Key.t (Root.Shape.type_ typ))
+    in
+    let value_merge : v option Merge.t = Merge.option (Root.Shape.merge typ) in
+    Merge.like_lwt generic value_merge (read_opt t) (add_opt t typ)
 end

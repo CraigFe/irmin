@@ -24,51 +24,55 @@ module type S = S
 
 module Witness = Irmin_type.Witness
 
-module Make (Step : Type.S) = struct
+module Make (Step : Type.S) (Hash : Type.S) (Addr : Type.S2) = struct
   type step = Step.t
 
   type empty = |
 
-  type 'a assoc = |
+  (* Wrap [Addr.t] to have an injective parameter *)
+  type 'a addr = Addr of 'a Addr.t | Void of 'a * empty
+  [@@ocaml.warning "-37"]
 
-  type 'a tree = |
+  let addr_t : type a. a Type.t -> a addr Type.t =
+   fun elt_t ->
+    Type.map (Addr.t elt_t)
+      (fun a -> Addr a)
+      (function Addr a -> a | Void _ -> .)
+
+  type 'a assoc = (step * 'a addr) array
 
   type 'a assoc_concrete = (step * 'a) array
+
+  type 'a tree = Branch_node of 'a tree assoc | Leaf_node of 'a
 
   type 'a tree_concrete =
     | Branch of 'a tree_concrete assoc_concrete
     | Leaf of 'a
 
-  let assoc_concrete_t elt_t = Type.(array (pair Step.t elt_t))
-
-  let tree_concrete_t elt_t =
-    let open Type in
-    mu (fun tree_concrete_t ->
-        variant "tree_concrete" (fun branch leaf ->
-          function Branch b -> branch b | Leaf l -> leaf l)
-        |~ case1 "branch" (assoc_concrete_t tree_concrete_t) (fun b -> Branch b)
-        |~ case1 "leaf" elt_t (fun l -> Leaf l)
-        |> sealv)
-
+  (* Types that shouldn't go in the exported namespace *)
   module Types = struct
-    (* Types that shouldn't go in the exported namespace *)
-
     type (_, _) typ =
       | Typ_record : 'a record -> ('a, empty) typ
       | Typ_variant : 'a variant -> ('a, empty) typ
+      | Typ_addr : ('a, 'b) typ -> ('a addr, 'b) typ
       | Typ_assoc : ('a, 'b) typ -> ('a assoc, 'b assoc_concrete) typ
       | Typ_tree : ('a, 'b) typ -> ('a tree, 'b tree_concrete) typ
-      | Typ_primitive : 'a Type.t -> ('a, 'a) typ
+      | Typ_primitive : {
+          t_generic : 'a Type.t;
+          t_merge : 'a Merge.t;
+        }
+          -> ('a, 'a) typ
 
     (* Records *)
     and 'record record =
       | Record : {
-          r_witness : 'record Witness.t;
           r_name : string;
+          r_type : 'record Type.t;
+          r_witness : 'record Witness.t;
           r_fields : ('record, 'cons, _, _) fields;
           r_constructor : 'cons;
         }
-          -> 'a record
+          -> 'record record
 
     and ('record, 'field) field =
       | Field : {
@@ -96,6 +100,7 @@ module Make (Step : Type.S) = struct
       v_name : string;
       v_cases : 'variant case_exists array;
       v_get : 'variant -> 'variant case_typeable;
+      v_type : 'variant Type.t;
     }
 
     and ('variant, 'arg, 'constr) case =
@@ -144,11 +149,48 @@ module Make (Step : Type.S) = struct
 
   type ('a, 'b) t = ('a, 'b) typ
 
+  let addr typ = Typ_addr typ
+
   let assoc typ = Typ_assoc typ
 
   let tree typ = Typ_tree typ
 
-  let primitive typ = Typ_primitive typ
+  let assoc_concrete_t elt_t = Type.(array (pair Step.t elt_t))
+
+  let merge : type a b. (a, b) typ -> a Merge.t = function
+    | Typ_primitive { t_merge; _ } -> t_merge
+    | _ -> (* TODO *) assert false
+
+  let assoc_t : type a. a Type.t -> a assoc Type.t =
+   fun elt_t -> Type.(array (pair Step.t (addr_t elt_t)))
+
+  let tree_t elt_t =
+    let open Type in
+    mu (fun tree_t ->
+        variant "tree" (fun branch leaf ->
+          function Branch_node b -> branch b | Leaf_node l -> leaf l)
+        |~ case1 "branch_node" (assoc_t tree_t) (fun b -> Branch_node b)
+        |~ case1 "leaf_node" elt_t (fun l -> Leaf_node l)
+        |> sealv)
+
+  let tree_concrete_t elt_t =
+    let open Type in
+    mu (fun tree_concrete_t ->
+        variant "tree_concrete" (fun branch leaf ->
+          function Branch b -> branch b | Leaf l -> leaf l)
+        |~ case1 "branch" (assoc_concrete_t tree_concrete_t) (fun b -> Branch b)
+        |~ case1 "leaf" elt_t (fun l -> Leaf l)
+        |> sealv)
+
+  let primitive t_generic t_merge = Typ_primitive { t_generic; t_merge }
+
+  let rec type_ : type a b. (a, b) typ -> a Type.t = function
+    | Typ_primitive { t_generic; _ } -> t_generic
+    | Typ_tree t -> tree_t (type_ t)
+    | Typ_assoc t -> assoc_t (type_ t)
+    | Typ_record (Record { r_type; _ }) -> r_type
+    | Typ_variant { v_type; _ } -> v_type
+    | Typ_addr t -> addr_t (type_ t)
 
   module Path = struct
     type ('a, 'b) t = ('a, 'b) path
@@ -232,8 +274,9 @@ module Make (Step : Type.S) = struct
     let sealr :
         type record_t cons lens.
         (record_t, cons, record_t, lens, unit) open_record ->
+        record_t Type.t ->
         (record_t, empty) typ * lens Path.hlist =
-     fun { open_record = r } ->
+     fun { open_record = r } r_type ->
       let Unwitnessed.{ name; cons; fields } = r Fields_nil in
       let r_witness = Witness.make () in
       let paths =
@@ -255,6 +298,7 @@ module Make (Step : Type.S) = struct
              {
                r_witness;
                r_name = name;
+               r_type;
                r_fields = fields;
                r_constructor = cons;
              }),
@@ -369,13 +413,14 @@ module Make (Step : Type.S) = struct
           prisms,
           unit )
         open_variant ->
+        variant Type.t ->
         (variant, empty) typ * prisms Path.hlist =
-     fun { open_variant = v; _ } ->
+     fun { open_variant = v; _ } v_type ->
       let v_name, v_get, cases = v Cases_nil in
       let v_witness = Witness.make () in
       let v_cases = array_of_case_list cases in
       let paths = paths_of_cases v_get cases in
-      (Typ_variant { v_witness; v_name; v_cases; v_get }, paths)
+      (Typ_variant { v_witness; v_name; v_cases; v_get; v_type }, paths)
 
     let case1 c_name c_type c_constructor =
       Untagged
@@ -396,7 +441,8 @@ module Make (Step : Type.S) = struct
             {
               c_tag;
               c_name;
-              c_type = Typ_primitive Type.unit;
+              c_type =
+                Typ_primitive { t_generic = Type.unit; t_merge = Merge.unit };
               c_constructor = (fun () -> c_singleton);
               c_witness = Witness.make ();
             })
