@@ -48,16 +48,31 @@ module type PATH = sig
   val pp : ('s, 'a) t Fmt.t
   (** The pretty-printer for paths. *)
 
+  (** {1 Using paths} *)
+
+  val get : deref:Addr.deref -> ('s, 'a) t -> 's -> 'a option Lwt.t
+  (** [get p s] is the focus of [p] in [s] (if it exists). *)
+
+  val update :
+    deref:Addr.deref -> pure:Addr.pure -> ('s, 'a) t -> 's -> 'a -> 's Lwt.t
+  (** [update p s f] is the source element [s'] obtained by applying [f] to the
+      focus of [p] in [s]. *)
+
+  (** {1 Building paths} *)
+
   val ( / ) : ('s, 'inner) t -> ('inner, 'a) t -> ('s, 'a) t
   (** Left-to-right composition of paths. *)
 
   val empty : ('s, 's) t
   (** The empty path. [empty] is the identity of {{!( / )} path composition}. *)
 
-  (* val find : string -> ('a assoc, 'a) t *)
+  val deref : 'a Type.t -> ('a addr, 'a) t
+  (** Dereference a store indirection on a serialisable value. *)
+
+  val find : string -> ('a assoc, 'a) t
   (** [find s] is the path that indexes an association list with the key [s]. *)
 
-  (* val steps : string list -> ('a tree, 'a) t *)
+  val steps : string list -> ('a tree, 'a) t
   (** [steps \[s_1; ...; s_n\]] is the path from the root of a tree to a leaf,
       following children with indices \[s_1; ...; s_n\]. *)
 
@@ -143,7 +158,11 @@ module type S = sig
 
   type empty = |
 
-  module Path : PATH with type 'a assoc := 'a assoc and type 'a tree := 'a tree
+  module Path :
+    PATH
+      with type 'a addr = 'a addr
+       and type 'a assoc := 'a assoc
+       and type 'a tree := 'a tree
 
   (** {2 Record types} *)
 
@@ -262,7 +281,7 @@ module type S = sig
     ('variant, empty) t * 'paths Path.hlist
 end
 
-module type MAKER = functor (Step : Type.S) (_ : Type.S) (Addr : Type.S2) ->
+module type MAKER = functor (Step : Type.S) (_ : Type.S) (Addr : ADDR) ->
   S with type step = Step.t
 
 module type Shape = sig
@@ -271,6 +290,8 @@ module type Shape = sig
   module type MAKER = MAKER
 
   module Make : MAKER
+
+  module type ADDR = ADDR
 
   module type PATH = PATH
 end
