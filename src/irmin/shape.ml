@@ -16,6 +16,8 @@
 
 open Shape_intf
 
+module type ADDR = ADDR
+
 module type PATH = PATH
 
 module type MAKER = MAKER

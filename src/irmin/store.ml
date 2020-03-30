@@ -1205,6 +1205,25 @@ struct
     Untyped.unsafe_add t (Key.hide k) Key.(pickle (to_pickler k) v)
 
   let batch, v, close = Untyped.(batch, v, close)
+
+  (* Polymorphic aliases *)
+
+  type finder = { finder : 'value. 'value key -> 'value option Lwt.t }
+  [@@unboxed]
+
+  let find' t = { finder = (fun k -> find t k) }
+
+  type adder = { adder : 'value. 'value Key.typ -> 'value -> 'value key Lwt.t }
+  [@@unboxed]
+
+  let add' t = { adder = (fun typ v -> add t typ v) }
+
+  type unsafe_adder = {
+    unsafe_adder : 'value. 'value key -> 'value -> unit Lwt.t;
+  }
+  [@@unboxed]
+
+  let unsafe_add' t = { unsafe_adder = (fun k -> unsafe_add t k) }
 end
 
 module Lift_content_addressable_maker : functor

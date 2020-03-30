@@ -249,6 +249,28 @@ module type TYPED_CONTENT_ADDRESSABLE_STORE = sig
   (** Same as {!add} but allows to specify the key directly. The backend might
       choose to discared that key and/or can be corrupt if the key scheme is not
       consistent. *)
+
+  (** {1 Maximally-polymorphic aliases} *)
+
+  type finder = { finder : 'value. 'value key -> 'value option Lwt.t }
+  [@@unboxed]
+
+  val find' : [> `Read ] t -> finder
+  (** [find'] is maximally-polymorphic {!find}. *)
+
+  type adder = { adder : 'value. 'value Type.t -> 'value -> 'value key Lwt.t }
+  [@@unboxed]
+
+  val add' : [> `Write ] t -> adder
+  (** [add'] is maximally-polymorphic {!add}. *)
+
+  type unsafe_adder = {
+    unsafe_adder : 'value. 'value key -> 'value -> unit Lwt.t;
+  }
+  [@@unboxed]
+
+  val unsafe_add' : [> `Write ] t -> unsafe_adder
+  (** unsafe_add' is maximally-polymorphic {!unsafe_add}. *)
 end
 
 module type TYPED_CONTENT_ADDRESSABLE_STORE_EXT = sig
@@ -448,6 +470,26 @@ module type NODE = sig
   (** [value_t] is the value type for {!value}. *)
 end
 
+module type TYPED_NODE = sig
+  type 'v t
+  (** The type for node values. *)
+
+  type metadata
+
+  val default : metadata
+  (** The default metadata value. *)
+
+  val metadata_t : metadata Type.t
+
+  type 'v hash
+
+  type 'v typ
+
+  type 'v value = 'v hash * metadata
+
+  val v : 'v typ -> 'v value -> 'v t
+end
+
 module type NODE_GRAPH = sig
   (** {1 Node Graphs} *)
 
@@ -544,6 +586,29 @@ module type NODE_GRAPH = sig
   (** [value_t] is the value type for {!value}. *)
 end
 
+module type TYPED_NODE_GRAPH = sig
+  type 'a t
+
+  type metadata
+
+  type 'v node
+
+  type step
+
+  type ('s, 'a) path
+
+  type 'v typ
+
+  type 'v value = [ `Node of 'v node | `Contents of 'v * metadata ]
+
+  val add : [> `Write ] t -> 'v typ -> 'v -> 'v node
+
+  val find : [> `Read ] t -> 's node -> ('s, 'a) path -> 'a option Lwt.t
+
+  val update :
+    [ `Read | `Write ] t -> 's node -> ('s, 'a) path -> 'a -> 's node Lwt.t
+end
+
 module type NODE_STORE = sig
   include CONTENT_ADDRESSABLE_STORE
 
@@ -569,6 +634,26 @@ module type NODE_STORE = sig
 
   module Contents : CONTENTS_STORE with type key = Val.hash
   (** [Contents] is the underlying contents store. *)
+end
+
+(** [TYPED_NODE_STORE] lifts [TYPED_CONTENTS_STORE] to associate metadata with
+    values in the store. *)
+module type TYPED_NODE_STORE = sig
+  include TYPED_CONTENT_ADDRESSABLE_STORE
+
+  type 'a shape
+
+  module Metadata : METADATA
+  (** [Metadata] provides base functions for node metadata. *)
+
+  module Contents : TYPED_CONTENTS_STORE with type 'a key = 'a key
+  (** [Contents] is the underlying contents store. *)
+
+  module Val :
+    TYPED_NODE with type 'a typ = 'a shape with type 'a hash = 'a Contents.Key.t
+
+  (** [Key] is an alias of {!Contents.Key}. *)
+  module Key : POLY_KEY with type 'a t = 'a key and type 'a typ = 'a shape
 end
 
 type config = Conf.t

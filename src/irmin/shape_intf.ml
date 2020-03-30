@@ -24,7 +24,19 @@ module type PICKLER = sig
   val unpickle : 'value t -> Pickled.t -> 'value option
 end
 
+module type ADDR = sig
+  include Type.S2
+
+  type deref = { deref : 'a. 'a t -> 'a option Lwt.t } [@@unboxed]
+
+  type pure = { pure : 'a. 'a Type.t -> 'a -> 'a t Lwt.t } [@@unboxed]
+end
+
 module type PATH = sig
+  module Addr : ADDR
+
+  type 'a addr
+
   type 'a assoc
 
   type 'a tree

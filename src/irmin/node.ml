@@ -247,6 +247,20 @@ struct
   module Val = S.Val
 end
 
+module Typed_store
+    (Contents : S.TYPED_CONTENTS_STORE)
+    (Metadata : S.METADATA)
+    (Node : S.TYPED_NODE
+              with type metadata = Metadata.t
+               and type 'a hash = 'a Contents.Key.t
+               and type 'a typ = 'a Contents.typ) =
+struct
+  module Contents = Contents
+  module Metadata = Metadata
+  module Val = Node
+  include Contents
+end
+
 module Graph (S : S.NODE_STORE) = struct
   module Path = S.Path
   module Contents = S.Contents.Key
@@ -485,4 +499,32 @@ module V1 (N : S.NODE) = struct
 
   let t : t Type.t =
     Type.map Type.(list ~len:`Int64 (pair step_t value_t)) v list
+end
+
+module Typed_graph
+    (N : S.TYPED_NODE_STORE)
+    (Path : Shape.PATH with type 'a Addr.t = 'a N.Key.t) =
+struct
+  type 'a t = 'a N.t
+
+  type 'a typ = 'a N.typ
+
+  type step = N.Contents.Root.Shape.step
+
+  type ('s, 'a) path = ('s, 'a) Path.t
+
+  type metadata = N.Metadata.t
+
+  type 'v node = 'v N.Key.t
+
+  let add t typ v = N.add t typ v
+
+  let find t node path =
+    let deref = { Path.Addr.deref = (fun a -> (N.find' t).finder a) } in
+    Path.get ~deref path node
+
+  let update t node path a =
+    let deref = { Path.Addr.deref = (fun x -> (N.find' t).finder x) } in
+    let pure = { Path.Addr.pure = (fun typ x -> (N.add' t).adder typ x) } in
+    Path.update ~deref ~pure path node a
 end
