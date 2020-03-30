@@ -679,6 +679,7 @@ let suite =
         ("test_duplicate_names", `Quick, test_duplicate_names);
         ("test_malformed_utf8", `Quick, test_malformed_utf8);
       ] );
+    ("shape", Test_shape.suite);
   ]
 
 let () = Alcotest.run "irmin" suite

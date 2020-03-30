@@ -17,6 +17,7 @@
 open Lwt.Infix
 module Type = Type
 module Diff = Diff
+module Shape = Shape
 module Content_addressable = Store.Content_addressable
 module Lift_append_only_maker = Store.Lift_append_only_maker
 

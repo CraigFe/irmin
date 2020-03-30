@@ -54,6 +54,9 @@ module Diff = Diff
 type 'a diff = 'a Diff.t
 (** The type for representing differences betwen values. *)
 
+module Shape = Shape
+(** Combinators for well-typed stores. *)
+
 (** {1 Low-level Stores} *)
 
 (** An Irmin store is automatically built from a number of lower-level stores,

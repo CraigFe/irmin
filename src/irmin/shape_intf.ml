@@ -56,43 +56,67 @@ module type PATH = sig
 end
 
 module type S = sig
-  type step
+  type ('root, 'concrete) t
+  (** The type of {i shapes} of Irmin stores in which the root tree-objects have
+      type ['root]. The type ['root] can contain well-typed {{!addr} addresses}
+      of values in the store, which are serialised as hashes.
 
-  type ('a, 'b) t
-  (** The type of {i representations of} the types of Irmin stores. Values of
-      this type can be used to build Irmin stores containing more than one
-      content type. *)
+      The ['concrete] type is a representation of ['root] that is independent of
+      a store (i.e. with store indirections removed), to be used for
+      importing/exporting stores to/from memory. *)
 
-  val merge : ('a, _) t -> 'a Merge.t
-  (** Shapes imply a merge operator. *)
+  (** {1 Using shapes} *)
 
-  val type_ : ('a, _) t -> 'a Type.t
-  (** Shapes imply a serialisation format. *)
+  val merge : ('root, _) t -> 'root Merge.t
+  (** Shapes imply a merge operation on values of the root type. *)
 
-  type empty = |
+  val type_ : ('root, _) t -> 'root Type.t
+  (** Shapes imply a serialisation format for values of the root type. *)
+
+  (** {1 Building shapes} *)
+
+  (** {2 Plain values} *)
+
+  val primitive : 'a Type.t -> 'a Merge.t -> ('a, 'a) t
+  (** [primitive t m] represents the type of stores containing a single value of
+      type [t] with merge operation [m]. Stores with such types can be indexed
+      with the {!Path.empty} path. *)
+
+  (** {2 Addresses} *)
 
   type 'a addr
-  (** Indirection via a store *)
+  (** An ['a addr] is a pointer to value of type ['a] in a store (e.g. an ['a]
+      hash in a content-addressable store). *)
 
-  val addr : ('a, 'b) t -> ('a addr, 'b) t
+  val addr : ('root, 'concrete) t -> ('root addr, 'concrete) t
+  (** [addr t] is the shape of stores consisting of pointers to values of type
+      ['root]. Note that [addr] does not appear in the ['concrete] type, as
+      pointer chains are collapsed in the concrete representation. *)
 
   val addr_t : 'a Type.t -> 'a addr Type.t
+  (** [addr_t] is the value type of {!addr}. *)
+
+  (** {2 Association lists} *)
 
   type 'a assoc
-  (** An [s assoc] is the type of a map from strings to stores of type [s t]. *)
+  (** An ['a assoc] is a map from {!step}s to values of type ['a]. *)
+
+  type step
+  (** The type of 'names' for addresses in the store. *)
 
   type 'a assoc_concrete = (step * 'a) array
+  (** The in-memory representation of {!assoc} stores. *)
 
   val assoc : ('a, 'b) t -> ('a assoc, 'b assoc_concrete) t
-  (** [assoc t] represents the type of association lists between strings and the
-      given store type [t]. Stores with such types can be indexed with the
+  (** [assoc t] is the shape of association lists between {!step}s and stores of
+      the given shape [t]. Stores with such types can be indexed with the
       {!Path.find} constructor. *)
 
-  type 'a tree
-  (** An [s tree] is the type of a tree with leaves of type [s t] and branches
-      with string-indexed children. Roughly equivalent to:
+  (** {2 Homogeneous trees} *)
 
-      {[ type 'a tree = Branch of (string * 'a tree) array | Leaf of 'a t ]} *)
+  type 'a tree
+  (** An ['a tree] is a tree with leaves of type ['a] and branches with
+      {!step}-indexed children. *)
 
   type 'a tree_concrete =
     | Branch of 'a tree_concrete assoc_concrete
@@ -105,14 +129,11 @@ module type S = sig
       [l]. Stores with such types can be indexed with the {!Path.steps}
       constructor. *)
 
-  val primitive : 'a Type.t -> 'a Merge.t -> ('a, 'a) t
-  (** [primitive t m] represents the type of stores containing a single value of
-      type [t] with merge operation [m]. Stores with such types can be indexed
-      with the {!Path.id} path. *)
+  type empty = |
 
   module Path : PATH with type 'a assoc := 'a assoc and type 'a tree := 'a tree
 
-  (** {1 Record types} *)
+  (** {2 Record types} *)
 
   type ( 'record,
          'constructor,
@@ -150,7 +171,7 @@ module type S = sig
     'record Type.t ->
     ('record, empty) t * 'paths Path.hlist
 
-  (** {1 Variant types} *)
+  (** {2 Variant types} *)
 
   type ( 'variant,
          'pattern,
@@ -233,11 +254,11 @@ module type MAKER = functor (Step : Type.S) (_ : Type.S) (Addr : Type.S2) ->
   S with type step = Step.t
 
 module type Shape = sig
-  module type PATH = PATH
-
   module type S = S
 
   module type MAKER = MAKER
 
   module Make : MAKER
+
+  module type PATH = PATH
 end
