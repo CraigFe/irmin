@@ -14,5 +14,5 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-include Typed_tree_intf.Typed_tree
+include Shape_intf.Shape
 (** @inline *)

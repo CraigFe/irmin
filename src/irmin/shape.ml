@@ -14,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-open Typed_tree_intf
+open Shape_intf
 
 module type PATH = PATH
 

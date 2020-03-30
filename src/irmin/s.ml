@@ -138,7 +138,7 @@ module type TYPED_CONTENTS = sig
 
   type concrete
 
-  module Shape : Typed_tree.S
+  module Shape : Shape.S
 
   val t : (t, concrete) Shape.t
 end

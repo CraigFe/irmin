@@ -232,7 +232,7 @@ end
 module type MAKER = functor (Step : Type.S) (_ : Type.S) (Addr : Type.S2) ->
   S with type step = Step.t
 
-module type Typed_tree = sig
+module type Shape = sig
   module type PATH = PATH
 
   module type S = S
