@@ -52,13 +52,27 @@ module Store
      and type Key.t = N.key
      and module Val = N.Val
 
+module type TYPED_CONTENTS_STORE_EXT = sig
+  include S.TYPED_CONTENT_ADDRESSABLE_STORE
+
+  val merge :
+    [ `Read | `Write ] t ->
+    'value Type.t ->
+    'value Merge.t ->
+    'value key option Merge.t
+
+  module Key :
+    S.Key.STRUCTURED
+      with type 'value t = 'value key
+       and type 'a Codec.t = 'a codec
+end
+
 module Typed_store
-    (Contents : S.TYPED_CONTENTS_STORE)
+    (Contents : TYPED_CONTENTS_STORE_EXT)
     (Metadata : S.METADATA)
     (Node : S.TYPED_NODE
               with type metadata = Metadata.t
-               and type 'a hash = 'a Contents.Key.t
-               and type 'a typ = 'a Contents.shape) : S.TYPED_NODE_STORE
+               and type 'a hash = 'a Contents.Key.t) : S.TYPED_NODE_STORE
 
 module Graph (N : S.NODE_STORE) :
   S.NODE_GRAPH
@@ -69,9 +83,12 @@ module Graph (N : S.NODE_STORE) :
      and type step = N.Path.step
      and type path = N.Path.t
 
-module Typed_graph (N : S.TYPED_NODE_STORE) : functor
-  (_ : Shape.PATH with type 'a Addr.t = 'a N.Key.t)
-  -> S.TYPED_NODE_GRAPH
+module Typed_graph
+    (N : S.TYPED_NODE_STORE)
+    (P : Shape.PATH
+           with type 'a Addr.t = 'a N.Key.t
+            and type 'a Addr.codec = 'a N.codec) :
+  S.TYPED_NODE_GRAPH with type 'a codec = 'a N.codec
 
 module V1 (N : S.NODE) : sig
   include

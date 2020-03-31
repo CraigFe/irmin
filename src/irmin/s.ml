@@ -143,37 +143,76 @@ module type TYPED_CONTENTS = sig
   val t : (t, concrete) Shape.t
 end
 
-module type PICKLER = sig
-  type 'value t
+module Codec_sigs = struct
+  module type S = sig
+    type 'a t
 
-  module Pickled : Type.S
+    module Data : Type.S
 
-  val pickle : 'value t -> 'value -> Pickled.t
+    val encode : 'a t -> 'a -> Data.t
 
-  val unpickle : 'value t -> Pickled.t -> 'value option
+    val decode : 'a t -> Data.t -> 'a option
+  end
+
+  module type DERIVABLE = sig
+    include S
+
+    val of_type : 'a Type.t -> 'a t
+  end
 end
 
-module type POLY_KEY = sig
-  type 'value t
-  (** The type of {i polymorphic} keys (keys that may point to values of more
-      than one type). *)
+module Key = struct
+  (** Signatures for well-typed keys. *)
 
-  val t : 'value Type.t -> 'value t Type.t
+  (** A [TYPED] key is a [(hash, codec)] pair, where [hash] is a serialisable
+      value and [codec] is a encoder/decoder for values of some type. *)
+  module type TYPED = sig
+    type 'v t
+    (** The type of {i polymorphic} keys (keys that may point to values of more
+        than one type). *)
 
-  type 'value typ
-  (** Poly keys can be used to pickle and unpickle values. *)
+    module Codec : Codec_sigs.S
+    (** Keys may be used to serialise values of the parameter type. *)
 
-  include PICKLER with type 'value t := 'value typ
+    val codec : 'v t -> 'v Codec.t
 
-  val to_pickler : 'value t -> 'value typ
+    module Hash : Type.S
+    (** Keys have an underlying hash representation *)
 
-  (** Poly keys have an underlying hash representation. *)
+    val hash : 'v t -> Hash.t
 
-  module Mono : HASH
+    val v : 'v Codec.t -> Hash.t -> 'v t
+  end
 
-  val hide : _ t -> Mono.t
+  (** [WITNESSED] extends {!TYPED} with the capacity to derive codecs from
+      witnesses. This is necessary to add content-addressed values before they
+      have a key. It also requires the underlying representation of keys to have
+      associated construction operations for hashes. *)
+  module type WITNESSED = sig
+    module Codec : Codec_sigs.DERIVABLE
+    (** Codecs must be derivable from witnesses *)
 
-  val recover : 'value typ -> Mono.t -> 'value t
+    module Hash : HASH
+    (** Key hashes must be constructable. *)
+
+    include TYPED with module Codec := Codec and module Hash := Hash
+  end
+
+  (** [MERGE_AWARE] extends {!WITNESSED}. *)
+  module type MERGE_AWARE = sig
+    include WITNESSED
+
+    val t : 'v Type.t -> 'v t Type.t
+    (** Keys must have a serialised representation (for merging) *)
+  end
+
+  (** [STRUCTURED] extends {!MERGE_AWARE}. *)
+  module type STRUCTURED = sig
+    include MERGE_AWARE
+
+    type step
+    (** Keys have steps in them *)
+  end
 end
 
 module type CONTENT_ADDRESSABLE_STORE = sig
@@ -231,8 +270,7 @@ module type TYPED_CONTENT_ADDRESSABLE_STORE = sig
   type 'value key
   (** The type for keys. *)
 
-  type 'value typ
-  (** The type of value-types of a key *)
+  type 'value codec
 
   val mem : [> `Read ] t -> _ key -> bool Lwt.t
   (** [mem t k] is true iff [k] is present in [t]. *)
@@ -241,7 +279,7 @@ module type TYPED_CONTENT_ADDRESSABLE_STORE = sig
   (** [find t k] is [Some v] if [k] is associated to [v] in [t] and [None] is
       [k] is not present in [t]. *)
 
-  val add : [> `Write ] t -> 'value typ -> 'value -> 'value key Lwt.t
+  val add : [> `Write ] t -> 'value codec -> 'value -> 'value key Lwt.t
   (** Write the contents of a value to the store. It's the responsibility of the
       content-addressable store to generate a consistent key. *)
 
@@ -258,7 +296,7 @@ module type TYPED_CONTENT_ADDRESSABLE_STORE = sig
   val find' : [> `Read ] t -> finder
   (** [find'] is maximally-polymorphic {!find}. *)
 
-  type adder = { adder : 'value. 'value Type.t -> 'value -> 'value key Lwt.t }
+  type adder = { adder : 'value. 'value codec -> 'value -> 'value key Lwt.t }
   [@@unboxed]
 
   val add' : [> `Write ] t -> adder
@@ -283,8 +321,11 @@ module type TYPED_CONTENT_ADDRESSABLE_STORE_EXT = sig
   val close : 'a t -> unit Lwt.t
 end
 
-module type TYPED_CONTENT_ADDRESSABLE_STORE_MAKER = functor (K : POLY_KEY) ->
-  TYPED_CONTENT_ADDRESSABLE_STORE_EXT with type 'a key = 'a K.t
+(** Keys of content-addressable stores must be equipped with codecs for the
+    values *)
+module type TYPED_CONTENT_ADDRESSABLE_STORE_MAKER = functor
+  (K : Key.WITNESSED)
+  -> TYPED_CONTENT_ADDRESSABLE_STORE_EXT with type 'a key = 'a K.t
 
 module type APPEND_ONLY_STORE = sig
   (** {1 Append-only stores}
@@ -355,7 +396,7 @@ end
 module type APPEND_ONLY_STORE_MAKER = functor (K : Type.S) (V : Type.S) ->
   APPEND_ONLY_STORE_EXT with type key = K.t and type value = V.t
 
-module type TYPED_APPEND_ONLY_STORE_MAKER = functor (K : POLY_KEY) ->
+module type TYPED_APPEND_ONLY_STORE_MAKER = functor (K : Key.TYPED) ->
   TYPED_APPEND_ONLY_STORE_EXT with type 'v key = 'v K.t
 
 module type METADATA = sig
@@ -396,12 +437,17 @@ end
 module type TYPED_CONTENTS_STORE = sig
   include TYPED_CONTENT_ADDRESSABLE_STORE
 
-  val merge : [ `Read | `Write ] t -> 'value typ -> 'value key option Merge.t
+  val merge :
+    [ `Read | `Write ] t ->
+    'value Type.t ->
+    'value Merge.t ->
+    'value key option Merge.t
 
-  module Key : POLY_KEY with type 'value t = 'value key
   (** [Key] provides base functions for user-defined contents keys. *)
-
-  module Root : TYPED_CONTENTS with type ('a, _) Shape.t = 'a typ
+  module Key :
+    Key.MERGE_AWARE
+      with type 'value t = 'value key
+       and type 'a Codec.t = 'a codec
 end
 
 module type NODE = sig
@@ -483,11 +529,9 @@ module type TYPED_NODE = sig
 
   type 'v hash
 
-  type 'v typ
-
   type 'v value = 'v hash * metadata
 
-  val v : 'v typ -> 'v value -> 'v t
+  val v : 'v Type.t -> 'v value -> 'v t
 end
 
 module type NODE_GRAPH = sig
@@ -597,11 +641,11 @@ module type TYPED_NODE_GRAPH = sig
 
   type ('s, 'a) path
 
-  type 'v typ
+  type 'a codec
 
   type 'v value = [ `Node of 'v node | `Contents of 'v * metadata ]
 
-  val add : [> `Write ] t -> 'v typ -> 'v -> 'v node
+  val add : [> `Write ] t -> 'v codec -> 'v -> 'v node Lwt.t
 
   val find : [> `Read ] t -> 's node -> ('s, 'a) path -> 'a option Lwt.t
 
@@ -641,19 +685,19 @@ end
 module type TYPED_NODE_STORE = sig
   include TYPED_CONTENT_ADDRESSABLE_STORE
 
-  type 'a shape
-
   module Metadata : METADATA
   (** [Metadata] provides base functions for node metadata. *)
 
   module Contents : TYPED_CONTENTS_STORE with type 'a key = 'a key
   (** [Contents] is the underlying contents store. *)
 
-  module Val :
-    TYPED_NODE with type 'a typ = 'a shape with type 'a hash = 'a Contents.Key.t
+  module Val : TYPED_NODE with type 'a hash = 'a Contents.Key.t
 
   (** [Key] is an alias of {!Contents.Key}. *)
-  module Key : POLY_KEY with type 'a t = 'a key and type 'a typ = 'a shape
+  module Key :
+    Key.STRUCTURED
+      with type 'value t = 'value key
+       and type 'a Codec.t = 'a codec
 end
 
 type config = Conf.t

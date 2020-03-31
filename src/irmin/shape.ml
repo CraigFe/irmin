@@ -30,7 +30,7 @@ module Make : MAKER =
 functor
   (Step : Type.S)
   (Hash : Type.S)
-  (Addr : ADDR)
+  (Addr : ADDR with type 'a codec = 'a Type.t)
   ->
   struct
     type step = Step.t

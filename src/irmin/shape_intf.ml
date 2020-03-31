@@ -24,12 +24,20 @@ module type PICKLER = sig
   val unpickle : 'value t -> Pickled.t -> 'value option
 end
 
+module type SHAPE = sig
+  type ('a, 'b) t
+
+  val to_codec : ('a, _) t -> 'a Type.t
+end
+
 module type ADDR = sig
   include Type.S2
 
+  type 'a codec
+
   type deref = { deref : 'a. 'a t -> 'a option Lwt.t } [@@unboxed]
 
-  type pure = { pure : 'a. 'a Type.t -> 'a -> 'a t Lwt.t } [@@unboxed]
+  type pure = { pure : 'a. 'a codec -> 'a -> 'a t Lwt.t } [@@unboxed]
 end
 
 module type PATH = sig
@@ -281,8 +289,11 @@ module type S = sig
     ('variant, empty) t * 'paths Path.hlist
 end
 
-module type MAKER = functor (Step : Type.S) (_ : Type.S) (Addr : ADDR) ->
-  S with type step = Step.t
+module type MAKER = functor
+  (Step : Type.S)
+  (_ : Type.S)
+  (Addr : ADDR with type 'a codec = 'a Type.t)
+  -> S with type step = Step.t
 
 module type Shape = sig
   module type S = S

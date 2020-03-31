@@ -76,11 +76,6 @@ module type APPEND_ONLY_STORE = sig
   (** @inline *)
 end
 
-module type POLY_KEY = sig
-  include S.POLY_KEY
-  (** @inline *)
-end
-
 module type TYPED_APPEND_ONLY_STORE = sig
   include S.TYPED_APPEND_ONLY_STORE
   (** @inline *)

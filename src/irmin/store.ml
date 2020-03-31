@@ -1143,10 +1143,10 @@ end
 type S.remote += Store : (module Store_intf.S with type t = 'a) * 'a -> S.remote
 
 module Lift_append_only
-    (Key : S.POLY_KEY)
+    (Key : S.Key.TYPED)
     (Untyped : S.APPEND_ONLY_STORE_EXT
-                 with type key = Key.Mono.t
-                  and type value = Key.Pickled.t) =
+                 with type key = Key.Hash.t
+                  and type value = Key.Codec.Data.t) =
 struct
   let ( >>=? ) : type a b. a option Lwt.t -> (a -> b option) -> b option Lwt.t =
    fun x f -> Lwt.map (fun x -> Option.bind x f) x
@@ -1155,11 +1155,11 @@ struct
 
   type 'value key = 'value Key.t
 
-  let mem t k = Untyped.mem t (Key.hide k)
+  let mem t k = Untyped.mem t (Key.hash k)
 
-  let find t k = Untyped.find t (Key.hide k) >>=? Key.(unpickle (to_pickler k))
+  let find t k = Untyped.find t (Key.hash k) >>=? Key.Codec.decode (Key.codec k)
 
-  let add t k v = Untyped.add t (Key.hide k) Key.(pickle (to_pickler k) v)
+  let add t k v = Key.Codec.encode (Key.codec k) v |> Untyped.add t (Key.hash k)
 
   let batch = Untyped.batch
 
@@ -1172,10 +1172,10 @@ module Lift_append_only_maker : functor (_ : S.APPEND_ONLY_STORE_MAKER) ->
   S.TYPED_APPEND_ONLY_STORE_MAKER =
 functor
   (Make_untyped : S.APPEND_ONLY_STORE_MAKER)
-  (Key : S.POLY_KEY)
+  (Key : S.Key.TYPED)
   ->
   struct
-    module Untyped = Make_untyped (Key.Mono) (Key.Pickled)
+    module Untyped = Make_untyped (Key.Hash) (Key.Codec.Data)
     (** [Untyped] is keyed by the monomorphic representation of keys and stores
         pickled values. *)
 
@@ -1183,10 +1183,10 @@ functor
   end
 
 module Lift_content_addressable
-    (Key : S.POLY_KEY)
+    (Key : S.Key.WITNESSED)
     (Untyped : S.CONTENT_ADDRESSABLE_STORE_EXT
-                 with type key = Key.Mono.t
-                  and type value = Key.Pickled.t) =
+                 with type key = Key.Hash.t
+                  and type value = Key.Codec.Data.t) =
 struct
   let ( >>=? ) : type a b. a option Lwt.t -> (a -> b option) -> b option Lwt.t =
    fun x f -> Lwt.map (fun x -> Option.bind x f) x
@@ -1195,14 +1195,16 @@ struct
 
   type 'value key = 'value Key.t
 
-  let mem t k = Untyped.mem t (Key.hide k)
+  type 'a codec = 'a Key.Codec.t
 
-  let find t k = Untyped.find t (Key.hide k) >>=? Key.(unpickle (to_pickler k))
+  let mem t k = Untyped.mem t (Key.hash k)
 
-  let add t typ v = Untyped.add t (Key.pickle typ v) >|= Key.recover typ
+  let find t k = Untyped.find t (Key.hash k) >>=? Key.Codec.decode (Key.codec k)
+
+  let add t typ v = Key.Codec.encode typ v |> Untyped.add t >|= Key.v typ
 
   let unsafe_add t k v =
-    Untyped.unsafe_add t (Key.hide k) Key.(pickle (to_pickler k) v)
+    Key.Codec.encode (Key.codec k) v |> Untyped.unsafe_add t (Key.hash k)
 
   let batch, v, close = Untyped.(batch, v, close)
 
@@ -1213,7 +1215,7 @@ struct
 
   let find' t = { finder = (fun k -> find t k) }
 
-  type adder = { adder : 'value. 'value Key.typ -> 'value -> 'value key Lwt.t }
+  type adder = { adder : 'value. 'value codec -> 'value -> 'value key Lwt.t }
   [@@unboxed]
 
   let add' t = { adder = (fun typ v -> add t typ v) }
@@ -1231,13 +1233,11 @@ module Lift_content_addressable_maker : functor
   -> S.TYPED_CONTENT_ADDRESSABLE_STORE_MAKER =
 functor
   (Make_untyped : S.CONTENT_ADDRESSABLE_STORE_MAKER)
-  (Key : S.POLY_KEY)
+  (Key : S.Key.WITNESSED)
   ->
   struct
-    module Untyped = Make_untyped (Key.Mono) (Key.Pickled)
+    module Untyped = Make_untyped (Key.Hash) (Key.Codec.Data)
     include Lift_content_addressable (Key) (Untyped)
-
-    type 'value typ = 'value Key.typ
   end
 
 module type S = Store_intf.S

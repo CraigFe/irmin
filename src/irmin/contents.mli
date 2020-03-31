@@ -69,16 +69,15 @@ module type MAKER = functor (C : CONTENT_ADDRESSABLE_STORE_EXT) ->
 module Store : MAKER
 
 (** [TYPED_CONTENT_ADDRESSABLE_STORE_EXT] is
-    {!S.TYPED_CONTENT_ADDRESSABLE_STORE} with the requirements that keys have a
-    {!S.HASH} representation and the values are sub-components of a root type
-    described by {!S.TYPED_CONTENTS}. *)
+    {!S.TYPED_CONTENT_ADDRESSABLE_STORE} with the requirement that keys have a
+    {!S.HASH} representation.. *)
 module type TYPED_CONTENT_ADDRESSABLE_STORE_EXT = sig
-  include S.TYPED_CONTENT_ADDRESSABLE_STORE
+  module Key : S.Key.MERGE_AWARE
 
-  module Key :
-    S.POLY_KEY with type 'value t = 'value key and type 'value typ = 'value typ
-
-  module Root : S.TYPED_CONTENTS with type ('a, _) Shape.t = 'a Key.typ
+  include
+    S.TYPED_CONTENT_ADDRESSABLE_STORE
+      with type 'a codec = 'a Key.Codec.t
+       and type 'value key = 'value Key.t
 end
 
 module type TYPED_MAKER = functor (C : TYPED_CONTENT_ADDRESSABLE_STORE_EXT) ->

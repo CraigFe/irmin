@@ -247,13 +247,27 @@ struct
   module Val = S.Val
 end
 
+module type TYPED_CONTENTS_STORE_EXT = sig
+  include S.TYPED_CONTENT_ADDRESSABLE_STORE
+
+  val merge :
+    [ `Read | `Write ] t ->
+    'value Type.t ->
+    'value Merge.t ->
+    'value key option Merge.t
+
+  module Key :
+    S.Key.STRUCTURED
+      with type 'value t = 'value key
+       and type 'a Codec.t = 'a codec
+end
+
 module Typed_store
-    (Contents : S.TYPED_CONTENTS_STORE)
+    (Contents : TYPED_CONTENTS_STORE_EXT)
     (Metadata : S.METADATA)
     (Node : S.TYPED_NODE
               with type metadata = Metadata.t
-               and type 'a hash = 'a Contents.Key.t
-               and type 'a typ = 'a Contents.typ) =
+               and type 'a hash = 'a Contents.Key.t) =
 struct
   module Contents = Contents
   module Metadata = Metadata
@@ -503,19 +517,23 @@ end
 
 module Typed_graph
     (N : S.TYPED_NODE_STORE)
-    (Path : Shape.PATH with type 'a Addr.t = 'a N.Key.t) =
+    (Path : Shape.PATH
+              with type 'a Addr.t = 'a N.Key.t
+               and type 'a Addr.codec = 'a N.codec) =
 struct
   type 'a t = 'a N.t
 
-  type 'a typ = 'a N.typ
-
-  type step = N.Contents.Root.Shape.step
+  type step = N.Key.step
 
   type ('s, 'a) path = ('s, 'a) Path.t
 
   type metadata = N.Metadata.t
 
   type 'v node = 'v N.Key.t
+
+  type 'a codec = 'a N.codec
+
+  type 'v value = [ `Node of 'v node | `Contents of 'v * metadata ]
 
   let add t typ v = N.add t typ v
 
@@ -525,6 +543,6 @@ struct
 
   let update t node path a =
     let deref = { Path.Addr.deref = (fun x -> (N.find' t).finder x) } in
-    let pure = { Path.Addr.pure = (fun typ x -> (N.add' t).adder typ x) } in
+    let pure = { Path.Addr.pure = (fun type_ x -> (N.add' t).adder type_ x) } in
     Path.update ~deref ~pure path node a
 end

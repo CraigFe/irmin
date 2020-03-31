@@ -323,12 +323,12 @@ module V1 = struct
 end
 
 module type TYPED_CONTENT_ADDRESSABLE_STORE_EXT = sig
-  include S.TYPED_CONTENT_ADDRESSABLE_STORE
+  module Key : S.Key.MERGE_AWARE
 
-  module Key :
-    S.POLY_KEY with type 'value t = 'value key and type 'value typ = 'value typ
-
-  module Root : S.TYPED_CONTENTS with type ('a, _) Shape.t = 'a Key.typ
+  include
+    S.TYPED_CONTENT_ADDRESSABLE_STORE
+      with type 'a codec = 'a Key.Codec.t
+       and type 'value key = 'value Key.t
 end
 
 module type TYPED_MAKER = functor (C : TYPED_CONTENT_ADDRESSABLE_STORE_EXT) ->
@@ -340,16 +340,15 @@ module Typed_store (S : TYPED_CONTENT_ADDRESSABLE_STORE_EXT) = struct
   let read_opt : type v. _ t -> v key option -> v option Lwt.t =
    fun t -> function None -> Lwt.return_none | Some k -> find t k
 
-  let add_opt : type v. _ t -> v typ -> v option -> v key option Lwt.t =
+  let add_opt : type v. _ t -> v codec -> v option -> v key option Lwt.t =
    fun t typ -> function
     | None -> Lwt.return_none
     | Some v -> add t typ v >>= Lwt.return_some
 
-  let merge : type v. _ t -> v typ -> v key option Merge.t =
-   fun t typ ->
-    let generic : v key option Type.t =
-      Type.option (Key.t (Root.Shape.type_ typ))
-    in
-    let value_merge : v option Merge.t = Merge.option (Root.Shape.merge typ) in
-    Merge.like_lwt generic value_merge (read_opt t) (add_opt t typ)
+  let merge : type v. _ t -> v Type.t -> v Merge.t -> v key option Merge.t =
+   fun t type_ merge ->
+    let codec : v key option Type.t = Type.option (Key.t type_) in
+    let value_merge : v option Merge.t = Merge.option merge in
+    Merge.like_lwt codec value_merge (read_opt t)
+      (add_opt t (Key.Codec.of_type type_))
 end
