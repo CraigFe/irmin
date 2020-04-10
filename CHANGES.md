@@ -33,6 +33,8 @@
     - Fields of records which have value `None` are still omitted;
     - Fields of records which have value `Some x` are still unboxed into `x`.
 
+ - The type `Irmin.S.tree` has been made abstract.
+
 ### 2.1.0 (2020-02-01)
 
 #### Added
