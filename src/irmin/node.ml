@@ -45,20 +45,27 @@ struct
 
   type metadata = M.t
 
-  type kind = [ `Node | `Contents of M.t ]
+  type _ kind =
+    | Node : K.t kind
+    | Contents : M.t -> K.t kind
+    (* A serialisable pointer to a different store *)
+    | Foreign : 'ptr Type.t -> 'ptr kind
 
-  type entry = { kind : kind; name : P.step; node : K.t }
+  type entry = Entry : { kind : 'v kind; name : P.step; node : 'v } -> entry
 
-  let kind_t =
+  let kind_t : type a. a Type.t -> a kind Type.t =
+   fun ptr_t ->
     let open Type in
-    variant "Tree.kind" (fun node contents contents_m ->
+    variant "Tree.kind" (fun node contents contents_m foreign ->
       function
-      | `Node -> node
-      | `Contents m ->
-          if Type.equal M.t m M.default then contents else contents_m m)
-    |~ case0 "node" `Node
-    |~ case0 "contents" (`Contents M.default)
-    |~ case1 "contents" M.t (fun m -> `Contents m)
+      | Node -> node
+      | Contents m ->
+          if Type.equal M.t m M.default then contents else contents_m m
+      | Foreign ptr -> foreign ptr)
+    |~ case0 "node" Node
+    |~ case0 "contents" (Contents M.default)
+    |~ case1 "contents" M.t (fun m -> Contents m)
+    |~ case0 "foreign" ptr_t (fun ptr -> Foreign ptr)
     |> sealv
 
   let entry_t : entry Type.t =
@@ -86,7 +93,15 @@ struct
     let compare (x : t) (y : t) = Type.compare P.step_t y x
   end)
 
-  type value = [ `Contents of hash * metadata | `Node of hash ]
+  type value =
+    | Contents : hash * metadata -> value
+    | Node : hash -> value
+    | Foreign : {
+        witness : 'hash Irmin_type.Witness.t;
+        type_ : 'hash Type.t;
+        hash : 'hash;
+      }
+        -> value
 
   type t = entry StepMap.t
 

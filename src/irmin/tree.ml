@@ -862,7 +862,15 @@ module Make (P : S.PRIVATE) = struct
 
   type metadata = Metadata.t
 
-  type tree = [ `Node of node | `Contents of contents * metadata ]
+  type tree =
+    | Node : node -> tree
+    | Contents : (contents * metadata) -> tree
+    | Foreign : {
+        dict : (module S.TREE with type Hash.t = 'h) as 'm;
+        witness : 'm Irmin_type.Witness.t;
+        hash : 'h;
+      }
+        -> tree
 
   let of_private_node repo n = Node.of_value repo n
 
@@ -892,9 +900,15 @@ module Make (P : S.PRIVATE) = struct
     x == y
     ||
     match (x, y) with
-    | `Node x, `Node y -> Node.equal x y
-    | `Contents x, `Contents y -> contents_equal x y
-    | `Node _, `Contents _ | `Contents _, `Node _ -> false
+    | Node x, Node y -> Node.equal x y
+    | Contents x, Contents y -> contents_equal x y
+    | Foreign x, Foreign y -> (
+        match Irmin_type.Witness.eq x.witness y.witness with
+        | Some Irmin_type.Witness.Refl ->
+            let (module Tree) = x.dict in
+            Type.equal Tree.Hash.t x.hash y.hash
+        | None -> false )
+    | (Node _ | Contents _ | Foreign _), _ -> false
 
   let is_empty = function
     | `Node n -> Node.is_empty n
@@ -908,8 +922,11 @@ module Make (P : S.PRIVATE) = struct
 
   let destruct : tree -> [> `Node of node | `Contents of contents * metadata ] =
     function
-    | `Node n -> `Node n
-    | `Contents c -> `Contents c
+    | Node n -> `Node n
+    | Contents c -> `Contents c
+    | Foreign _ ->
+        (* TODO(craigfe) *)
+        assert false
 
   let clear ?depth = function
     | `Node n -> Node.clear ?depth n
@@ -925,8 +942,9 @@ module Make (P : S.PRIVATE) = struct
           | Some (`Node n) -> (aux [@tailcall]) n p )
     in
     match t with
-    | `Node n -> (aux [@tailcall]) n path
-    | `Contents _ -> Lwt.return_none
+    | Node n -> (aux [@tailcall]) n path
+    | Contents _ -> Lwt.return_none
+    | Foreign _ -> (* TODO(craigfe) *) assert false
 
   let find_tree (t : tree) path =
     Log.debug (fun l -> l "Tree.find_tree %a" pp_path path);

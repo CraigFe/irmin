@@ -252,7 +252,7 @@ module type NODE = sig
   type step
   (** The type for steps between nodes. *)
 
-  type value = [ `Node of hash | `Contents of hash * metadata ]
+  type value
   (** The type for either (node) keys or (contents) keys combined with their
       metadata. *)
 
@@ -803,6 +803,8 @@ module type TREE = sig
   type contents
 
   type node
+
+  module Hash : HASH
 
   type tree
 

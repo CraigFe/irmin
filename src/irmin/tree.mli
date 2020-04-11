@@ -22,6 +22,7 @@ module Make (P : S.PRIVATE) : sig
        and type step = P.Node.Path.step
        and type metadata = P.Node.Val.metadata
        and type contents = P.Contents.value
+       and type Hash.t = P.Hash.t
 
   val import : P.Repo.t -> P.Node.key -> node option Lwt.t
 
