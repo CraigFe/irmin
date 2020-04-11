@@ -1,0 +1,6 @@
+(library
+ (name irmin_cli)
+ (public_name irmin-cli)
+ (libraries cmdliner logs.fmt logs.cli fmt.cli fmt.tty yaml irmin irmin-chunk
+   irmin-fs irmin-git irmin-graphql irmin-http irmin-mem irmin-pack
+   irmin-unix irmin-watcher))

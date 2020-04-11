@@ -201,5 +201,4 @@ val set_listen_dir_hook : unit -> unit
     directories. *)
 
 module Graphql = Graphql
-module Cli = Cli
-module Resolver = Resolver
+module Info = Info

@@ -20,7 +20,7 @@ Documentation can be found online at [https://mirage.github.io/irmin](https://mi
 ### Installation
 To install Irmin, the command-line tool and all optional dependencies using [opam](https://github.com/ocaml/opam):
 
-    opam install irmin-unix
+    opam install irmin-cli
 
 A minimal installation, with no storage backends can be installed by running:
 
@@ -43,6 +43,7 @@ The following packages have been made available on `opam`:
 - `irmin-mirage-graphql` - mirage compatible GraphQL server
 - `irmin-unix` - unix compatibility
 - `irmin-pack` - compressed, on-disk, posix backend
+- `irmin-cli` - the `irmin` command-line interface, with dependencies on the other backends
 - `ppx_irmin` - PPX deriver for Irmin content types (see [README_PPX.md][ppx_irmin-readme])
 
 For more information about an individual package consult the [online documentation](https://mirage.github.io/irmin).
@@ -102,7 +103,7 @@ foo/bar => 'testing 123'
 The `examples/` directory also contains more advanced examples, which can be executed in the same way.
 
 ### Command-line
-The same thing can also be accomplished using `irmin`, the command-line application installed with `irmin-unix`, by running:
+The same thing can also be accomplished using `irmin`, the command-line application installed with `irmin-cli`, by running:
 
 ```bash
 $ echo "root: ." > irmin.yml

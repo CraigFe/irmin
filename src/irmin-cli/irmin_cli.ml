@@ -18,14 +18,14 @@ open Lwt.Infix
 open Cmdliner
 open Resolver
 
-let () = Hook.init ()
+let () = Irmin_unix.set_listen_dir_hook ()
 
-let info ?(author = "irmin") fmt = Info.v ~author fmt
+let info ?(author = "irmin") fmt = Irmin_unix.Info.v ~author fmt
 
 (* Help sections common to all commands *)
 let help_sections =
   [
-    `S global_option_section;
+    `S Manpage.s_common_options;
     `P "These options can be passed to any command";
     `S "AUTHORS";
     `P "Thomas Gazagnaire   <thomas@gazagnaire.org>";
@@ -44,8 +44,8 @@ let setup_log =
 
 let term_info title ~doc ~man =
   let man = man @ help_sections in
-  Term.info ~sdocs:global_option_section ~docs:global_option_section ~doc ~man
-    title
+  Term.info ~sdocs:Manpage.s_common_options ~docs:Manpage.s_common_options ~doc
+    ~man title
 
 type command = unit Term.t * Term.info
 
@@ -115,7 +115,7 @@ let init =
        let init (S ((module S), store, _)) daemon uri =
          run
            ( store >>= fun t ->
-             let module HTTP = Http.Server (S) in
+             let module HTTP = Irmin_unix.Http.Server (S) in
              if daemon then (
                let uri = Uri.of_string uri in
                let spec = HTTP.v (S.repo t) in
@@ -402,7 +402,8 @@ let pull =
          run
            ( store >>= fun t ->
              remote >>= fun r ->
-             Sync.pull_exn t (apply r f) (`Merge (Info.v ?author "%s" message))
+             Sync.pull_exn t (apply r f)
+               (`Merge (Irmin_unix.Info.v ?author "%s" message))
              >>= fun _ -> Lwt.return_unit )
        in
        Term.(mk pull $ store $ author $ message $ remote));
@@ -670,7 +671,7 @@ let graphql =
        let graphql (S ((module S), store, remote_fn)) port addr =
          run
            (let module Server =
-              Graphql.Server.Make
+              Irmin_unix.Graphql.Server.Make
                 (S)
                 (struct
                   let remote = remote_fn
@@ -733,8 +734,8 @@ let default =
       graphql.doc
   in
   ( Term.(mk usage $ const ()),
-    Term.info "irmin" ~version:Irmin.version ~sdocs:global_option_section ~doc
-      ~man )
+    Term.info "irmin" ~version:Irmin.version ~sdocs:Manpage.s_common_options
+      ~doc ~man )
 
 let commands =
   List.map create_command

@@ -16,8 +16,6 @@
 
 (** Irmin store resolver. *)
 
-val global_option_section : string
-
 val branch : string option Cmdliner.Term.t
 
 (** {1 Hash} *)

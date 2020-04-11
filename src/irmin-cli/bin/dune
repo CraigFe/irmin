@@ -1,0 +1,5 @@
+(executable
+ (name main)
+ (public_name irmin)
+ (package irmin-cli)
+ (libraries checkseum.c digestif.c irmin-cli))

@@ -18,8 +18,6 @@ open Lwt.Infix
 open Cmdliner
 open Astring
 
-let global_option_section = "COMMON OPTIONS"
-
 let flag_key k =
   let doc = Irmin.Private.Conf.doc k in
   let docs = Irmin.Private.Conf.docs k in
@@ -51,7 +49,7 @@ let key k default =
 let opt_key k = key k (Irmin.Private.Conf.default k)
 
 let config_path_key =
-  Irmin.Private.Conf.key ~docs:global_option_section ~docv:"PATH"
+  Irmin.Private.Conf.key ~docs:Manpage.s_common_options ~docv:"PATH"
     ~doc:"Allows configuration file to be specified on the command-line."
     "config" Irmin.Private.Conf.string "irmin.yml"
 
@@ -101,7 +99,7 @@ module Contents = struct
           (fst !default)
       in
       let arg_info =
-        Arg.info ~doc ~docs:global_option_section [ "contents"; "c" ]
+        Arg.info ~doc ~docs:Manpage.s_common_options [ "contents"; "c" ]
       in
       Arg.(value & opt (some string) None & arg_info)
     in
@@ -233,7 +231,7 @@ module Hash = struct
           (fst !default) pp_variable_size_doc variable_size_types
       in
       let arg_info =
-        Arg.info ~doc ~docs:global_option_section [ "hash"; "h" ]
+        Arg.info ~doc ~docs:Manpage.s_common_options [ "hash"; "h" ]
       in
       Arg.(value & opt (some hash_function_conv) None & arg_info)
     in
@@ -274,13 +272,15 @@ module Store = struct
 
   let mem = create (module Irmin_mem.Make)
 
-  let irf = create (module Fs.Make)
+  let irf = create (module Irmin_unix.FS.Make)
 
-  let http = function T ((module S), x) -> T ((module Http.Client (S)), x)
+  let http = function
+    | T ((module S), x) -> T ((module Irmin_unix.Http.Client (S)), x)
 
-  let git (module C : Irmin.Contents.S) = v_git (module Xgit.FS.KV (C))
+  let git (module C : Irmin.Contents.S) = v_git (module Irmin_unix.Git.FS.KV (C))
 
-  let git_mem (module C : Irmin.Contents.S) = v_git (module Xgit.Mem.KV (C))
+  let git_mem (module C : Irmin.Contents.S) =
+    v_git (module Irmin_unix.Git.Mem.KV (C))
 
   module Inode_config = struct
     let entries = 32
@@ -328,7 +328,7 @@ module Store = struct
           (fst !default)
       in
       let arg_info =
-        Arg.info ~doc ~docs:global_option_section [ "s"; "store" ]
+        Arg.info ~doc ~docs:Manpage.s_common_options [ "s"; "store" ]
       in
       Arg.(value & opt (some (enum store_types)) None & arg_info)
     in
@@ -451,7 +451,7 @@ let branch =
   let doc =
     Arg.info
       ~doc:"The current branch name. Default is the store's master branch."
-      ~docs:global_option_section ~docv:"BRANCH" [ "b"; "branch" ]
+      ~docs:Manpage.s_common_options ~docv:"BRANCH" [ "b"; "branch" ]
   in
   Arg.(value & opt (some string) None & doc)
 

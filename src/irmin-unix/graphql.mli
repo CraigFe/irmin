@@ -1,13 +1,15 @@
+type remote_fn = ?headers:Cohttp.Header.t -> string -> Irmin.remote
+
 module Server : sig
   module Remote : sig
     module None : sig
-      val remote : Resolver.Store.remote_fn option
+      val remote : remote_fn option
     end
   end
 
   module Make
       (S : Irmin.S) (Remote : sig
-        val remote : Resolver.Store.remote_fn option
+        val remote : remote_fn option
       end) :
     Irmin_graphql.Server.S
       with type repo = S.repo
@@ -15,7 +17,7 @@ module Server : sig
 
   module Make_ext
       (S : Irmin.S) (Remote : sig
-        val remote : Resolver.Store.remote_fn option
+        val remote : remote_fn option
       end)
       (T : Irmin_graphql.Server.CUSTOM_TYPES
              with type key := S.key

@@ -1,3 +1,5 @@
+type remote_fn = ?headers:Cohttp.Header.t -> string -> Irmin.remote
+
 module Server = struct
   module Remote = struct
     module None = struct
@@ -7,7 +9,7 @@ module Server = struct
 
   module Make_ext
       (S : Irmin.S) (Remote : sig
-        val remote : Resolver.Store.remote_fn option
+        val remote : remote_fn option
       end)
       (T : Irmin_graphql.Server.CUSTOM_TYPES
              with type key := S.key
@@ -27,7 +29,7 @@ module Server = struct
 
   module Make
       (S : Irmin.S) (Remote : sig
-        val remote : Resolver.Store.remote_fn option
+        val remote : remote_fn option
       end) =
     Irmin_graphql.Server.Make
       (Cohttp_lwt_unix.Server)

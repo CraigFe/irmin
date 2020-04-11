@@ -5,6 +5,9 @@
 - **irmin**:
   - Added `Irmin.Type.empty` to represent an uninhabited type. (#961, @CraigFe)
 
+- **irmin-cli**:
+  - New package containing the `irmin` CLI previously defined in `irmin-unix`.
+
 #### Changed
 
 - **irmin**:
@@ -36,7 +39,7 @@
   - The type `Irmin.S.tree` is now abstract. The previous form can be coerced
     to/from the abstract representation with the new functions
     `Irmin.S.Tree.{v,destruct}` respectively. (#990, @CraigFe)
-    
+
 - **irmin-mem**
   - Stores created with `KV` now expose their unit metadata type. (#995,
     @CraigFe)
@@ -46,6 +49,12 @@
 - **irmin-graphql**
   - Fixed an issue with keys inside `get_{contents,tree}` fields having
     incorrect ordering (#989, @CraigFe)
+
+#### Removed
+
+- **irmin-unix**:
+  - `irmin-unix` no longer installs an `irmin` executable. Use the new
+    `irmin-cli` package instead.
 
 ### 2.1.0 (2020-02-01)
 
