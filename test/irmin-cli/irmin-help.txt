@@ -1,0 +1,87 @@
+NAME
+       irmin - Irmin, the database that never forgets.
+
+SYNOPSIS
+       irmin COMMAND ...
+
+DESCRIPTION
+       Irmin is a distributed database used primarily for application data.
+       It is designed to work with a large variety of backends and has
+       built-in snapshotting, reverting and branching mechanisms.
+
+       Use either irmin <command> --help or irmin help <command> for more
+       information on a specific command.
+
+OPTIONS
+       --color=WHEN (absent=auto)
+           Colorize the output. WHEN must be one of `auto', `always' or
+           `never'.
+
+       -q, --quiet
+           Be quiet. Takes over -v and --verbosity.
+
+       -v, --verbose
+           Increase verbosity. Repeatable, but more than twice does not bring
+           more.
+
+       --verbosity=LEVEL (absent=warning)
+           Be more or less verbose. LEVEL must be one of `quiet', `error',
+           `warning', `info' or `debug'. Takes over -v.
+
+COMMON OPTIONS
+       clone
+           Copy a remote respository to a local store
+
+       dot Dump the contents of the store as a Graphviz file.
+
+       fetch
+           Download objects and refs from another repository.
+
+       get Read the value associated with a key.
+
+       graphql
+           Run a graphql server.
+
+       help
+           Display help about Irmin and Irmin commands.
+
+       init
+           Initialize a store.
+
+       list
+           List subdirectories.
+
+       merge
+           Merge branches.
+
+       pull
+           Fetch and merge with another repository.
+
+       push
+           Update remote references along with associated objects.
+
+       remove
+           Delete a key.
+
+       revert
+           Revert the contents of the store to a previous state.
+
+       set Update the value associated with a key.
+
+       snapshot
+           Return a snapshot for the current state of the database.
+
+       tree
+           List the store contents.
+
+       watch
+           Get notifications when values change.
+
+       --help[=FMT] (default=auto)
+           Show this help in format FMT. The value FMT must be one of `auto',
+           `pager', `groff' or `plain'. With `auto', the format is `pager` or
+           `plain' whenever the TERM env var is `dumb' or undefined.
+
+       --version
+           Show version information.
+

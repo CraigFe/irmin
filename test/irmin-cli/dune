@@ -1,0 +1,10 @@
+(rule
+ (with-stdout-to
+  irmin-help.txt.gen
+  (run irmin --help=plain)))
+
+(rule
+ (alias runtest)
+ (package irmin-cli)
+ (action
+  (diff irmin-help.txt irmin-help.txt.gen)))
