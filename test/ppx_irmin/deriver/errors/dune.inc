@@ -16,8 +16,8 @@
    %{targets}
    (bash "! ./%{pp} -no-color --impl %{input}"))))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff unsupported_tuple_size.expected unsupported_tuple_size.actual)))
@@ -34,8 +34,8 @@
    %{targets}
    (bash "! ./%{pp} -no-color --impl %{input}"))))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff unsupported_type_arrow.expected unsupported_type_arrow.actual)))
@@ -52,8 +52,8 @@
    %{targets}
    (bash "! ./%{pp} -no-color --impl %{input}"))))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff unsupported_type_extension.expected unsupported_type_extension.actual)))
@@ -70,8 +70,8 @@
    %{targets}
    (bash "! ./%{pp} -no-color --impl %{input}"))))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff unsupported_type_open.expected unsupported_type_open.actual)))
@@ -88,8 +88,8 @@
    %{targets}
    (bash "! ./%{pp} -no-color --impl %{input}"))))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff unsupported_type_open_polyvariant.expected
@@ -107,8 +107,8 @@
    %{targets}
    (bash "! ./%{pp} -no-color --impl %{input}"))))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff unsupported_type_package.expected unsupported_type_package.actual)))
@@ -125,8 +125,8 @@
    %{targets}
    (bash "! ./%{pp} -no-color --impl %{input}"))))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff unsupported_type_poly.expected unsupported_type_poly.actual)))
@@ -143,8 +143,8 @@
    %{targets}
    (bash "! ./%{pp} -no-color --impl %{input}"))))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff unsupported_type_variable.expected unsupported_type_variable.actual)))

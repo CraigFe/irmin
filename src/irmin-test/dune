@@ -8,6 +8,8 @@
  (name irmin_bench)
  (public_name irmin-test.bench)
  (modules Irmin_bench Rusage)
- (c_names rusage_stubs)
+ (foreign_stubs
+  (language c)
+  (names rusage_stubs))
  (libraries lwt.unix irmin logs.fmt cmdliner fmt.cli fmt.tty logs.cli metrics
    metrics-unix))

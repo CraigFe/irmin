@@ -14,7 +14,7 @@ let output_stanzas ~expect_failure filename =
       Format.fprintf ppf "@[<v 1>(library@ (name %s)@ (modules %s))@]" base base
     else ()
   in
-  let pp_rule ppf base =
+  let pp_gen_rule ppf base =
     let pp_action ppf expect_failure =
       Format.fprintf ppf
         ( if expect_failure then
@@ -35,17 +35,17 @@ let output_stanzas ~expect_failure filename =
        %a))@]@]"
       base base pp_action expect_failure
   in
-  let pp_alias ppf base =
+  let pp_diff_rule ppf base =
     Format.fprintf ppf
-      "@[<v 1>(alias@,\
-       (name runtest)@,\
+      "@[<v 1>(rule@,\
+       (alias runtest)@,\
        (package ppx_irmin)@,\
        @[<v 1>(action@,\
        @[<hov 2>(diff@ %s.expected@ %s.actual)@])@])@]" base base
   in
   Format.set_margin 80;
-  Format.printf "@[<v 0>@,%a@,@,%a@,@,%a@]@." pp_library base pp_rule base
-    pp_alias base
+  Format.printf "@[<v 0>@,%a@,@,%a@,@,%a@]@." pp_library base pp_gen_rule base
+    pp_diff_rule base
 
 let is_error_test = function
   | "pp.ml" -> false
