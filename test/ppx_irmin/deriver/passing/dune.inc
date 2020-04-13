@@ -16,8 +16,8 @@
  (action
   (run ./%{pp} -deriving-keep-w32 both --impl %{input} -o %{targets})))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff alias.expected alias.actual)))
@@ -34,8 +34,8 @@
  (action
   (run ./%{pp} -deriving-keep-w32 both --impl %{input} -o %{targets})))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff arguments.expected arguments.actual)))
@@ -52,8 +52,8 @@
  (action
   (run ./%{pp} -deriving-keep-w32 both --impl %{input} -o %{targets})))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff basic.expected basic.actual)))
@@ -70,8 +70,8 @@
  (action
   (run ./%{pp} -deriving-keep-w32 both --impl %{input} -o %{targets})))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff composite.expected composite.actual)))
@@ -88,8 +88,8 @@
  (action
   (run ./%{pp} -deriving-keep-w32 both --impl %{input} -o %{targets})))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff module.expected module.actual)))
@@ -106,8 +106,8 @@
  (action
   (run ./%{pp} -deriving-keep-w32 both --impl %{input} -o %{targets})))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff nonrec.expected nonrec.actual)))
@@ -124,8 +124,8 @@
  (action
   (run ./%{pp} -deriving-keep-w32 both --impl %{input} -o %{targets})))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff polyvariant.expected polyvariant.actual)))
@@ -142,8 +142,8 @@
  (action
   (run ./%{pp} -deriving-keep-w32 both --impl %{input} -o %{targets})))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff record.expected record.actual)))
@@ -160,8 +160,8 @@
  (action
   (run ./%{pp} -deriving-keep-w32 both --impl %{input} -o %{targets})))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff signature.expected signature.actual)))
@@ -178,8 +178,8 @@
  (action
   (run ./%{pp} -deriving-keep-w32 both --impl %{input} -o %{targets})))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff tuple_deep.expected tuple_deep.actual)))
@@ -196,8 +196,8 @@
  (action
   (run ./%{pp} -deriving-keep-w32 both --impl %{input} -o %{targets})))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package ppx_irmin)
  (action
   (diff variant.expected variant.actual)))

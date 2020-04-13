@@ -8,8 +8,8 @@
  (modules test)
  (libraries checkseum.c digestif.c irmin test_git))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package irmin-git)
  (action
   (run ./test.exe -q --color=always)))

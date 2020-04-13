@@ -8,8 +8,8 @@
  (modules test)
  (libraries digestif.ocaml test_mem))
 
-(alias
- (name runtest)
+(rule
+ (alias runtest)
  (package irmin-mem)
  (action
   (run ./test.exe -q --color=always)))
@@ -19,7 +19,7 @@
  (modules bench)
  (libraries irmin-mem irmin-test.bench))
 
-(alias
- (name bench)
+(rule
+ (alias bench)
  (action
   (run ./bench.exe)))
