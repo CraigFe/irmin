@@ -1,0 +1,10 @@
+type unit = string[@@deriving irmin]
+include struct let unit_t = Irmin.Type.string end[@@ocaml.doc "@inline"]
+[@@merlin.hide ]
+type t = ((unit)[@nobuiltin ])[@@deriving irmin]
+include struct let t = unit_t end[@@ocaml.doc "@inline"][@@merlin.hide ]
+type foo = ((unit)[@irmin.nobuiltin ])[@@deriving irmin]
+include struct let foo_t = Irmin.Type.unit end[@@ocaml.doc "@inline"]
+[@@merlin.hide ]
+let (_ : unit_t Irmin.Type.t) = t
+let (_ : unit_t Irmin.Type.t) = foo_t

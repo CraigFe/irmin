@@ -232,8 +232,15 @@ module Located (A : Ast_builder.S) : S = struct
                       | None -> (
                           match txt with
                           | Lident cons_name ->
-                              if SSet.mem cons_name irmin_types then
-                                evar ("Irmin.Type." ^ cons_name)
+                              let nobuiltin =
+                                match Attribute.get Attributes.nobuiltin c with
+                                | Some () -> true
+                                | None -> false
+                              in
+                              if
+                                (not nobuiltin)
+                                && SSet.mem cons_name irmin_types
+                              then evar ("Irmin.Type." ^ cons_name)
                               else
                                 (* If not a basic type, assume a composite
                                    generic /w same naming convention *)
