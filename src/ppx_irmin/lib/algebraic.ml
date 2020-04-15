@@ -48,16 +48,13 @@ module Located (A : Ast_builder.S) (M : Monad.S) : S with module M = M = struct
 
   let ( >|= ) x f = List.map f x
 
-  let unlabelled x = (Nolabel, x)
-
   let compose_all : type a. (a -> a) list -> a -> a =
    fun l x -> List.fold_left ( |> ) x (List.rev l)
 
   let generate_identifiers n =
     List.init n (fun i -> Printf.sprintf "x%d" (i + 1))
 
-  (** [lambda "x" e] is [fun x -> e] *)
-  let lambda fparam = pvar fparam |> pexp_fun Nolabel None
+  let lambda fparam body = [%expr fun [%p pvar fparam] -> [%e body]]
 
   type nonrec record_field_repr = {
     field_name : string;
@@ -82,14 +79,7 @@ module Located (A : Ast_builder.S) (M : Monad.S) : S with module M = M = struct
       if polymorphic then pexp_variant cons_name None
       else pexp_construct (Located.lident cons_name) None
     in
-    pexp_apply (evar "|~")
-      ( [
-          e;
-          pexp_apply (evar "case0")
-            ( [ pexp_constant @@ Pconst_string (cons_name, None); fnbody ]
-            >|= unlabelled );
-        ]
-      >|= unlabelled )
+    [%expr [%e e] |~ case0 [%e estring cons_name] [%e fnbody]]
 
   (** {[
         |~ case1 "cons_name" component_type (fun (x1, ..., xN) -> (`)Cons_name (x1, ..., xN))
@@ -102,22 +92,12 @@ module Located (A : Ast_builder.S) (M : Monad.S) : S with module M = M = struct
         if polymorphic then pexp_variant cons_name (Some tuple_exp)
         else pexp_construct (Located.lident cons_name) (Some tuple_exp)
       in
-      pexp_fun Nolabel None tuple_pat fnbody
+      [%expr fun [%p tuple_pat] -> [%e fnbody]]
     in
-    pexp_apply (evar "|~")
-      ( [
-          e;
-          pexp_apply (evar "case1")
-            ( [
-                pexp_constant @@ Pconst_string (cons_name, None);
-                component_type;
-                constructor;
-              ]
-            >|= unlabelled );
-        ]
-      >|= unlabelled )
+    [%expr
+      [%e e]
+      |~ case1 [%e estring cons_name] [%e component_type] [%e constructor]]
 
-  (** Wrapper for {!variant_case0} and {!variant_case1} *)
   let variant_case ~polymorphic { case_name; case_cons } =
     match case_cons with
     | None -> variant_case0 ~polymorphic ~cons_name:case_name
@@ -127,18 +107,12 @@ module Located (A : Ast_builder.S) (M : Monad.S) : S with module M = M = struct
 
   (** [|+ field "field_name" (field_type) (fun t -> t.field_name)] *)
   let record_field { field_name; field_generic } e =
-    pexp_apply (evar "|+")
-      ( [
-          e;
-          pexp_apply (evar "field")
-            ( [
-                pexp_constant @@ Pconst_string (field_name, None);
-                field_generic;
-                lambda "t" (pexp_field (evar "t") (Located.lident field_name));
-              ]
-            >|= unlabelled );
-        ]
-      >|= unlabelled )
+    let constructor =
+      lambda "t" (pexp_field (evar "t") (Located.lident field_name))
+    in
+    [%expr
+      [%e e]
+      |+ field [%e estring field_name] [%e field_generic] [%e constructor]]
 
   (** Record composites are encoded as a constructor function
 
@@ -251,13 +225,11 @@ module Located (A : Ast_builder.S) (M : Monad.S) : S with module M = M = struct
     | Polyvariant -> "variant"
 
   let sealer_of_typ : type a b. (a, b) typ -> expression -> expression =
-    let seal name e =
-      pexp_apply (evar "|>") ([ e; evar name ] >|= unlabelled)
+   fun t e ->
+    let sealer =
+      match t with Record -> "sealr" | Variant | Polyvariant -> "sealv"
     in
-    function
-    | Record -> seal "sealr"
-    | Variant -> seal "sealv"
-    | Polyvariant -> seal "sealv"
+    [%expr [%e e] |> [%e evar sealer]]
 
   let encode :
       type a b.
@@ -277,9 +249,8 @@ module Located (A : Ast_builder.S) (M : Monad.S) : S with module M = M = struct
       |> M.map List.rev
       |> M.map compose_all
     in
-    pexp_apply
-      (evar (combinator_of_typ typ))
-      ([ estring type_name; composite ] >|= unlabelled)
+    [%expr
+      [%e evar (combinator_of_typ typ)] [%e estring type_name] [%e composite]]
     |> apply_augments
     |> sealer_of_typ typ
 end

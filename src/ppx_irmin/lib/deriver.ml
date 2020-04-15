@@ -75,8 +75,6 @@ module Located (A : Ast_builder.S) : S = struct
 
   let ( >|= ) x f = List.map f x
 
-  let lambda fparam = pvar fparam |> pexp_fun Nolabel None
-
   let open_lib expr =
     let+ { lib; _ } = ask in
     match lib with
@@ -91,11 +89,9 @@ module Located (A : Ast_builder.S) : S = struct
           expr
     | None -> expr
 
-  let recursive ~lib fparam e =
-    let lib = match lib with Some s -> s | None -> "" in
-    pexp_apply
-      (evar (String.concat "." [ lib; "mu" ]))
-      ([ lambda fparam e ] >|= unlabelled)
+  let recursive ~lib fparam expr =
+    let mu = match lib with Some s -> s ^ ".mu" | None -> "mu" in
+    [%expr [%e evar mu] (fun [%p pvar fparam] -> [%e expr])]
 
   let generic_name_of_type_name = function "t" -> "t" | x -> x ^ "_t"
 
@@ -255,15 +251,10 @@ module Located (A : Ast_builder.S) : S = struct
 
   let parse_lib expr =
     match expr with
-    | { pexp_desc = Pexp_construct ({ txt = Lident "None"; _ }, None); _ } ->
-        None
-    | {
-     pexp_desc =
-       Pexp_construct
-         ( { txt = Lident "Some"; _ },
-           Some { pexp_desc = Pexp_constant (Pconst_string (lib, None)); _ } );
-     _;
-    } ->
+    | [%expr None] -> None
+    | [%expr
+        Some [%e? { pexp_desc = Pexp_constant (Pconst_string (lib, None)); _ }]]
+      ->
         Some lib
     | { pexp_loc = loc; _ } ->
         Location.raise_errorf ~loc
@@ -325,7 +316,6 @@ module Located (A : Ast_builder.S) : S = struct
             recursive ~lib:env.lib env.generic_name expr
           else expr
         in
-        let pat = pvar env.generic_name in
-        [ pstr_value Nonrecursive [ value_binding ~pat ~expr ] ]
+        [%str let [%p pvar env.generic_name] = [%e expr]]
     | _ -> invalid_arg "Multiple type declarations not supported"
 end
