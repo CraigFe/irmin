@@ -92,3 +92,28 @@ include
                    (fun (x1, x2) -> Cons (x1, x2))))
                |> sealv)
   end[@@ocaml.doc "@inline"][@@merlin.hide ]
+type test_inline_record =
+  | A of {
+  foo: string ;
+  bar: int } 
+  | B of {
+  baz: unit } [@@deriving irmin]
+include
+  struct
+    let test_inline_record_t =
+      let open Irmin.Type in
+        (((variant "test_inline_record"
+             (fun a -> fun b -> function | A x1 -> a x1 | B x1 -> b x1))
+            |~
+            (case1 "A"
+               ((((record "A" (fun foo -> fun bar -> { foo; bar })) |+
+                    (field "foo" string (fun t -> t.foo)))
+                   |+ (field "bar" int (fun t -> t.bar)))
+                  |> sealr) (fun x1 -> A x1)))
+           |~
+           (case1 "B"
+              (((record "B" (fun baz -> { baz })) |+
+                  (field "baz" unit (fun t -> t.baz)))
+                 |> sealr) (fun x1 -> B x1)))
+          |> sealv
+  end[@@ocaml.doc "@inline"][@@merlin.hide ]

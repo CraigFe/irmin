@@ -185,7 +185,7 @@ module Located (A : Ast_builder.S) (M : Monad.S) : S with module M = M = struct
       let n =
         match c.pcd_args with
         | Pcstr_tuple args -> List.length args
-        | Pcstr_record _ -> invalid_arg "Inline record types unsupported"
+        | Pcstr_record _ -> 1
       in
       variant_pattern c.pcd_name.txt pattern n
     in

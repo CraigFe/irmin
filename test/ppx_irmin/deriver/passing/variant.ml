@@ -14,3 +14,8 @@ type test_variant5 =
 [@@deriving irmin]
 
 type test_variant6 = Nil | Cons of string * test_variant6 [@@deriving irmin]
+
+type test_inline_record =
+  | A of { foo : string; bar : int }
+  | B of { baz : unit }
+[@@deriving irmin]

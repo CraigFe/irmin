@@ -163,7 +163,12 @@ module Located (A : Ast_builder.S) : S = struct
       let case_name = c.pcd_name.txt in
       let+ case_cons =
         match c.pcd_args with
-        | Pcstr_record _ -> invalid_arg "Inline record types unsupported"
+        | Pcstr_record ls ->
+            let+ inline_record_repr =
+              derive_record ls
+              |> Reader.local (fun s -> { s with type_name = case_name })
+            in
+            Some (inline_record_repr, 1)
         | Pcstr_tuple [] -> return None
         | Pcstr_tuple cs ->
             let+ tuple_typ = derive_tuple cs in
