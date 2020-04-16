@@ -76,6 +76,22 @@
  (action
   (diff composite.expected composite.actual)))
 
+
+
+(rule
+ (targets extension.actual)
+ (deps
+  (:pp pp.exe)
+  (:input extension.ml-invalid))
+ (action
+  (run ./%{pp} -deriving-keep-w32 both --impl %{input} -o %{targets})))
+
+(alias
+ (name runtest)
+ (package ppx_irmin)
+ (action
+  (diff extension.expected extension.actual)))
+
 (library
  (name lib_relocated)
  (modules lib_relocated))

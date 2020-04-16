@@ -38,6 +38,8 @@ module type S = sig
   (** Deriver for Irmin generic type signatures.
 
       Optional arguments have the same meaning as in {!derive_str}. *)
+
+  val expand_extension : lib:string option -> core_type -> expression
 end
 
 module Located (A : Ast_builder.S) : S

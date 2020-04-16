@@ -29,6 +29,11 @@ let expand_sig ~loc ~path:_ input_ast name lib =
   let (module L) = (module Deriver.Located (S) : Deriver.S) in
   L.derive_sig ?name ?lib input_ast
 
+let expand_extension ~loc ~path:_ input_ast =
+  let (module S) = Ast_builder.make loc in
+  let (module L) = (module Deriver.Located (S) : Deriver.S) in
+  L.expand_extension input_ast
+
 let str_type_decl_generator =
   let args = Deriving.Args.(empty +> arg "name" (estring __) +> arg "lib" __) in
   let attributes = Attributes.all in
@@ -39,5 +44,11 @@ let sig_type_decl_generator =
   Deriving.Generator.make args expand_sig
 
 let irmin =
-  Deriving.add ~str_type_decl:str_type_decl_generator
-    ~sig_type_decl:sig_type_decl_generator ppx_name
+  let str_type_decl = str_type_decl_generator
+  and sig_type_decl = sig_type_decl_generator
+  and extension = expand_extension ~lib:(Some "Irmin.Type") in
+  Deriving.add ~str_type_decl ~sig_type_decl ~extension ppx_name
+
+let ty =
+  let extension = expand_extension ~lib:None in
+  Deriving.add ~extension "ty"

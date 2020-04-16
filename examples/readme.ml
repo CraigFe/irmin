@@ -1,6 +1,14 @@
 (* N.B. This excerpt is extracted from project README. Any changes made here
  * should be mirrored there. *)
 
+let _ =
+  let open Irmin.Type in
+    result int
+      (((variant "" (fun msg -> function | `Msg x1 -> msg x1)) |~
+          (case1 "Msg" string (fun x1 -> `Msg x1)))
+         |> sealv)
+
+
 open Lwt.Infix
 
 (* Irmin store with string contents *)

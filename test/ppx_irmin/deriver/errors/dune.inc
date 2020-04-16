@@ -7,6 +7,24 @@
 
 
 (rule
+ (targets bad_antiquote_payload.actual)
+ (deps
+  (:pp pp.exe)
+  (:input bad_antiquote_payload.ml))
+ (action
+  (with-stderr-to
+   %{targets}
+   (bash "! ./%{pp} -no-color --impl %{input}"))))
+
+(alias
+ (name runtest)
+ (package ppx_irmin)
+ (action
+  (diff bad_antiquote_payload.expected bad_antiquote_payload.actual)))
+
+
+
+(rule
  (targets lib_invalid.actual)
  (deps
   (:pp pp.exe)

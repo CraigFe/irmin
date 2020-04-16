@@ -65,3 +65,9 @@ module Unsupported = struct
       "%s: alias type %a encountered. Alias types are not supported." name
       Pprintast.core_type ctyp
 end
+
+let bad_expr_antiquotation_payload ~loc =
+  Location.raise_errorf ~loc
+    "%s: bad payload for [%%e ... ] anti-quotation. Must be a single \
+     expression."
+    name

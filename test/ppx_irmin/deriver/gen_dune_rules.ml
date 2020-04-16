@@ -10,7 +10,7 @@ let global_stanzas () =
 let output_stanzas ~expect_failure filename =
   let base = Filename.remove_extension filename in
   let pp_library ppf base =
-    if not expect_failure then
+    if Filename.check_suffix filename ".ml" && not expect_failure then
       Format.fprintf ppf "@[<v 1>(library@ (name %s)@ (modules %s))@]" base base
     else ()
   in
@@ -30,10 +30,10 @@ let output_stanzas ~expect_failure filename =
        (targets %s.actual)@,\
        @[<v 1>(deps@,\
        (:pp pp.exe)@,\
-       (:input %s.ml))@]@,\
+       (:input %s))@]@,\
        @[<v 1>(action@,\
        %a))@]@]"
-      base base pp_action expect_failure
+      base filename pp_action expect_failure
   in
   let pp_alias ppf base =
     Format.fprintf ppf
@@ -50,7 +50,9 @@ let output_stanzas ~expect_failure filename =
 let is_error_test = function
   | "pp.ml" -> false
   | "gen_dune_rules.ml" -> false
-  | filename -> Filename.check_suffix filename ".ml"
+  | filename ->
+      Filename.check_suffix filename ".ml"
+      || Filename.check_suffix filename ".ml-invalid"
 
 let () =
   let expect_failure =

@@ -1,0 +1,2 @@
+File "bad_antiquote_payload.ml", line 1, characters 8-43:
+Error: ppx_irmin: bad payload for [%e ... ] anti-quotation. Must be a single expression.

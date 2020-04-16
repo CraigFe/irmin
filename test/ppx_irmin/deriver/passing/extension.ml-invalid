@@ -1,0 +1,19 @@
+(* This file has suffix [.ml-invalid] to avoid registering it as a library in
+   Dune. Once https://github.com/mirage/irmin/pull/970 is merged, this can be
+   handled as a regular file (with a preprocessing dependency). *)
+
+let _ = [%irmin: unit]
+
+let _ = [%irmin: (string * int) list]
+
+let _ = [%irmin: (int, [ `Msg of string ]) result]
+
+type foo
+
+type a
+
+type b
+
+let _ = [%ty: ((int, a * b * (int[@nobuiltin])) result, foo Lazy.t) Map.t]
+
+let _ = [%ty: a * [%e b]]

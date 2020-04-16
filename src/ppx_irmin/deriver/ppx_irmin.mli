@@ -16,3 +16,6 @@
 
 val irmin : Ppxlib.Deriving.t
 (** [Ppx_deriving] plugin for Irmin generics. *)
+
+val ty : Ppxlib.Deriving.t
+(** Extension point expander for reifying types as combinators. *)

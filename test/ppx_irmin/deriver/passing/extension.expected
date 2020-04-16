@@ -1,0 +1,13 @@
+let _ = let open Irmin.Type in unit
+let _ = let open Irmin.Type in list (pair string int)
+let _ =
+  let open Irmin.Type in
+    result int
+      (((variant "" (fun msg -> function | `Msg x1 -> msg x1)) |~
+          (case1 "Msg" string (fun x1 -> `Msg x1)))
+         |> sealv)
+type foo
+type a
+type b
+let _ = Map.t (result int (triple a_t b_t int_t)) (Lazy.t foo_t)
+let _ = pair a_t b

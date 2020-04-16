@@ -35,3 +35,5 @@ module Unsupported : sig
 
   val type_alias : loc:location -> core_type -> 'a
 end
+
+val bad_expr_antiquotation_payload : loc:location -> 'a

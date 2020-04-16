@@ -49,6 +49,8 @@ module type S = sig
     ?lib:expression ->
     rec_flag * type_declaration list ->
     signature_item list
+
+  val expand_extension : lib:string option -> core_type -> expression
 end
 
 module Located (A : Ast_builder.S) : S = struct
@@ -94,6 +96,11 @@ module Located (A : Ast_builder.S) : S = struct
     [%expr [%e evar mu] (fun [%p pvar fparam] -> [%e expr])]
 
   let generic_name_of_type_name = function "t" -> "t" | x -> x ^ "_t"
+
+  let expand_anti_quotation ~loc = function
+    | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> expr
+    | PStr _ | PSig _ | PTyp _ | PPat _ ->
+        Raise.bad_expr_antiquotation_payload ~loc
 
   let rec derive_core typ =
     let* { rec_flag; type_name; generic_name; rec_detected; _ } = ask in
@@ -145,6 +152,8 @@ module Located (A : Ast_builder.S) : S = struct
     | Ptyp_arrow _ -> Raise.Unsupported.type_arrow ~loc typ
     | Ptyp_var v -> Raise.Unsupported.type_var ~loc v
     | Ptyp_package _ -> Raise.Unsupported.type_package ~loc typ
+    | Ptyp_extension ({ txt = "e"; _ }, payload) ->
+        return (expand_anti_quotation ~loc payload)
     | Ptyp_extension _ -> Raise.Unsupported.type_extension ~loc typ
     | Ptyp_alias _ -> Raise.Unsupported.type_alias ~loc typ
     | _ -> invalid_arg "unsupported"
@@ -318,4 +327,17 @@ module Located (A : Ast_builder.S) : S = struct
         in
         [%str let [%p pvar env.generic_name] = [%e expr]]
     | _ -> invalid_arg "Multiple type declarations not supported"
+
+  let expand_extension ~lib input_ast =
+    let env =
+      State.
+        {
+          rec_flag = Nonrecursive;
+          type_name = "";
+          generic_name = "";
+          rec_detected = ref false;
+          lib;
+        }
+    in
+    run (derive_core input_ast >>= open_lib) env
 end

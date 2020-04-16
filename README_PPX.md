@@ -123,3 +123,43 @@ end = struct
   val t = Irmin.Type.int32
 end
 ```
+
+### Extension point expansion
+
+You can also derive Irmin generics inline using the `%irmin` extension point:
+
+```ocaml
+let my_repr = [%irmin: (int, [ `Msg of string ]) result]
+
+(* which becomes *)
+
+let my_repr =
+  let open Irmin.Type in
+  result int
+    ( variant "" (fun msg (`Msg m) -> msg m)
+      |~ case1 "Msg" string (fun m -> `Msg m)
+      |> sealv )
+```
+
+#### Anti-quotation
+
+It can be useful to supply your own generic for a _component_ of a type inside
+the extension point. This can be achieved with the expression antiquotation `[%e
+<expr>]`:
+
+```ocaml
+let fixed_size_lists = [%irmin: (int, [%e Irmin.Type.(list ~len:10 string)]) result]
+```
+
+#### Non-Irmin type representations
+
+`ppx_irmin` will expand the `[%ty: <type>]` extension point, which is like
+`[%irmin: <type>]` except that it assumes that the type combinators to use are
+already in scope. This can be used with type combinators from libraries like
+`Alcotest` and `Fmt`:
+
+```ocaml
+let pp_result = Fmt.([%ty: (int * string) list)
+
+let check_result = Alcotest.([%ty: (int32 list, string) result])
+```
