@@ -29,6 +29,10 @@ module Unsupported : sig
 
   val type_open_polyvar : loc:location -> core_type -> 'a
 
+  val type_open_object : loc:location -> core_type -> 'a
+
+  val type_object_inherit : loc:location -> core_type -> 'a
+
   val type_package : loc:location -> core_type -> 'a
 
   val type_extension : loc:location -> core_type -> 'a

@@ -50,6 +50,17 @@ module Unsupported = struct
        be closed."
       name Pprintast.core_type ctyp
 
+  let type_open_object ~loc ctyp =
+    Location.raise_errorf ~loc
+      "%s: open object type %a encountered. Object types must be closed." name
+      Pprintast.core_type ctyp
+
+  let type_object_inherit ~loc ctyp =
+    Location.raise_errorf ~loc
+      "%s: inherited object type %a encountered. Inheritance in object types \
+       is not supported."
+      name Pprintast.core_type ctyp
+
   let type_package ~loc ctyp =
     Location.raise_errorf ~loc
       "%s: package type %a encountered. Package types are not \

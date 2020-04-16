@@ -144,9 +144,11 @@ module Located (A : Ast_builder.S) : S = struct
               args >|= derive_core |> sequence |> map (List.map unlabelled)
             in
             pexp_apply (pexp_ident lident) cons_args )
-    | Ptyp_variant (_, Open, _) -> Raise.Unsupported.type_open_polyvar ~loc typ
     | Ptyp_variant (rowfields, Closed, _labellist) ->
         derive_polyvariant type_name rowfields
+    | Ptyp_variant (_, Open, _) -> Raise.Unsupported.type_open_polyvar ~loc typ
+    | Ptyp_object (objectfields, Closed) -> derive_object objectfields
+    | Ptyp_object (_, Open) -> Raise.Unsupported.type_open_object ~loc typ
     | Ptyp_poly _ -> Raise.Unsupported.type_poly ~loc typ
     | Ptyp_tuple args -> derive_tuple args
     | Ptyp_arrow _ -> Raise.Unsupported.type_arrow ~loc typ
@@ -184,6 +186,19 @@ module Located (A : Ast_builder.S) : S = struct
       Algebraic.{ field_name; field_generic }
     in
     Algebraic.(encode Record) ~subderive ~type_name ls
+
+  and derive_object fs =
+    let* State.{ type_name; _ } = ask in
+    let subderive field =
+      let field_name, field_type =
+        match field.pof_desc with
+        | Otag ({ txt; _ }, typ) -> (txt, typ)
+        | Oinherit t -> Raise.Unsupported.type_object_inherit ~loc:t.ptyp_loc t
+      in
+      let+ field_generic = derive_core field_type in
+      Algebraic.{ field_name; field_generic }
+    in
+    Algebraic.(encode Object) ~subderive ~type_name fs
 
   and derive_variant cs =
     let* { type_name; _ } = ask in

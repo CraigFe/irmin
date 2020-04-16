@@ -115,6 +115,25 @@
 
 
 (rule
+ (targets unsupported_type_object_inherit.actual)
+ (deps
+  (:pp pp.exe)
+  (:input unsupported_type_object_inherit.ml))
+ (action
+  (with-stderr-to
+   %{targets}
+   (bash "! ./%{pp} -no-color --impl %{input}"))))
+
+(alias
+ (name runtest)
+ (package ppx_irmin)
+ (action
+  (diff unsupported_type_object_inherit.expected
+    unsupported_type_object_inherit.actual)))
+
+
+
+(rule
  (targets unsupported_type_open.actual)
  (deps
   (:pp pp.exe)
@@ -129,6 +148,25 @@
  (package ppx_irmin)
  (action
   (diff unsupported_type_open.expected unsupported_type_open.actual)))
+
+
+
+(rule
+ (targets unsupported_type_open_object.actual)
+ (deps
+  (:pp pp.exe)
+  (:input unsupported_type_open_object.ml))
+ (action
+  (with-stderr-to
+   %{targets}
+   (bash "! ./%{pp} -no-color --impl %{input}"))))
+
+(alias
+ (name runtest)
+ (package ppx_irmin)
+ (action
+  (diff unsupported_type_open_object.expected
+    unsupported_type_open_object.actual)))
 
 
 

@@ -7,3 +7,5 @@ type test_record2 = {
   the_SECOND_identifier : (string, int32) result list;
 }
 [@@deriving irmin]
+
+type object_ = < foo : string ; bar : int > [@@deriving irmin]

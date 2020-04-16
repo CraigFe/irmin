@@ -18,6 +18,8 @@
     combinators. `[%ty: <type>]` is similar but assumes type combinators are
     already in scope. See `README_PPX` for details.
 
+  - Added support for object types.
+
 #### Changed
 
 - **irmin**:

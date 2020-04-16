@@ -1,0 +1,2 @@
+File "unsupported_type_object_inherit.ml", line 3, characters 25-26:
+Error: ppx_irmin: inherited object type y encountered. Inheritance in object types is not supported.

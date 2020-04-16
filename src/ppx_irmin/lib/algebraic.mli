@@ -36,6 +36,7 @@ module type S = sig
         derive the {i composite} generic *)
   type (_, _) typ =
     | Record : (label_declaration, record_field_repr) typ
+    | Object : (object_field, record_field_repr) typ
     | Variant : (constructor_declaration, variant_case_repr) typ
     | Polyvariant : (row_field, variant_case_repr) typ
 

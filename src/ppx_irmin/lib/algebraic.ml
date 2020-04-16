@@ -29,6 +29,7 @@ module type S = sig
 
   type (_, _) typ =
     | Record : (label_declaration, record_field_repr) typ
+    | Object : (object_field, record_field_repr) typ
     | Variant : (constructor_declaration, variant_case_repr) typ
     | Polyvariant : (row_field, variant_case_repr) typ
 
@@ -68,6 +69,7 @@ module Located (A : Ast_builder.S) (M : Monad.S) : S with module M = M = struct
 
   type (_, _) typ =
     | Record : (label_declaration, record_field_repr) typ
+    | Object : (object_field, record_field_repr) typ
     | Variant : (constructor_declaration, variant_case_repr) typ
     | Polyvariant : (row_field, variant_case_repr) typ
 
@@ -105,10 +107,12 @@ module Located (A : Ast_builder.S) (M : Monad.S) : S with module M = M = struct
         let idents = generate_identifiers n in
         variant_case1 ~polymorphic ~cons_name:case_name ~component_type ~idents
 
-  (** [|+ field "field_name" (field_type) (fun t -> t.field_name)] *)
-  let record_field { field_name; field_generic } e =
+  (** [|+ field "field_name" (field_type) (fun t -> t(.|#)field_name] *)
+  let record_field ~accessor_type { field_name; field_generic } e =
     let constructor =
-      lambda "t" (pexp_field (evar "t") (Located.lident field_name))
+      match accessor_type with
+      | `Field -> lambda "t" (pexp_field (evar "t") (Located.lident field_name))
+      | `Send -> lambda "t" (pexp_send (evar "t") (Located.mk field_name))
     in
     [%expr
       [%e e]
@@ -125,6 +129,23 @@ module Located (A : Ast_builder.S) (M : Monad.S) : S with module M = M = struct
       pexp_record rfields None
     in
     lambda_wrapper record
+
+  (** Similar to {!record_composite}, but build an object rather than a record. *)
+  let object_composite fields =
+    let labels =
+      (fields >|= fun { pof_desc; _ } -> pof_desc) >|= function
+      | Otag (label, _type) -> label
+      | Oinherit t -> Raise.Unsupported.type_object_inherit ~loc:t.ptyp_loc t
+    in
+    let lambda_wrapper =
+      compose_all (labels >|= (fun { txt; _ } -> txt) >|= lambda)
+    in
+    let fields =
+      labels >|= fun label ->
+      pcf_method (label, Public, Cfk_concrete (Fresh, evar label.txt))
+    in
+    let object_ = pexp_object (class_structure ~self:ppat_any ~fields) in
+    lambda_wrapper object_
 
   (** {[ | Cons_name (x1, x2, x3) -> cons_name x1 x2 x3 ] ]} *)
   let variant_pattern cons_name pattern n =
@@ -210,24 +231,29 @@ module Located (A : Ast_builder.S) (M : Monad.S) : S with module M = M = struct
 
   let augment_of_typ : type a b. (a, b) typ -> b -> expression -> expression =
     function
-    | Record -> record_field
+    | Record -> record_field ~accessor_type:`Field
+    | Object -> record_field ~accessor_type:`Send
     | Variant -> variant_case ~polymorphic:false
     | Polyvariant -> variant_case ~polymorphic:true
 
   let composite_of_typ : type a b. (a, b) typ -> a list -> expression = function
     | Record -> record_composite
+    | Object -> object_composite
     | Variant -> variant_composite
     | Polyvariant -> polyvariant_composite
 
   let combinator_of_typ : type a b. (a, b) typ -> string = function
     | Record -> "record"
+    | Object -> "record"
     | Variant -> "variant"
     | Polyvariant -> "variant"
 
   let sealer_of_typ : type a b. (a, b) typ -> expression -> expression =
    fun t e ->
     let sealer =
-      match t with Record -> "sealr" | Variant | Polyvariant -> "sealv"
+      match t with
+      | Record | Object -> "sealr"
+      | Variant | Polyvariant -> "sealv"
     in
     [%expr [%e e] |> [%e evar sealer]]
 
