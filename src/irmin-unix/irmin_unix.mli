@@ -19,16 +19,19 @@
     This module provides Irmin backends for Unix applications. The currently
     supported backends are:
 
-    - An {{!Irmin_mem} in-memory} store, internally using hash tables.
-    - A {{!Irmin_fs} file-system} backend, using
+    - {!FS}: a {{!Irmin_fs} file-system} backend, using
       {{:https://github.com/janestreet/bin_prot} bin_prot} to serialize internal
       structures.
-    - A fully compatible, bidirectional encoding of Irmin into {{!Irmin_git}
-      Git}. You can view and edit your store using both the library and your
-      usual Git tools.
-    - The HTTP {{!module:Irmin_http} clients} and {{!module:Http.Server}
-      servers} provides a high-level REST API, with 1 RTT for the
-      {{!Irmin.S.Private} private} and {{!Irmin.S} public} functions. *)
+
+    - {!Git}: a fully compatible, bidirectional encoding of Irmin into
+      {{!Irmin_git} Git}. You can view and edit your store using both the
+      library and your usual Git tools.
+
+    - {!Graphql}: a {{!Irmin_graphql} GraphQL server} using [Cohttp_lwt_unix].
+
+    - {!Http}: the HTTP {{!module:Irmin_http} clients} and
+      {{!module:Http.Server} servers} provide a high-level REST API, with 1 RTT
+      for the {{!Irmin.S.Private} private} and {{!Irmin.S} public} functions. *)
 
 val info :
   ?author:string -> ('a, Format.formatter, unit, Irmin.Info.f) format4 -> 'a
