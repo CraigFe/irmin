@@ -1,9 +1,11 @@
 (executable
  (name main)
- (libraries irmin bechamel))
+ (libraries irmin bechamel yojson ppx_deriving_yojson.runtime)
+ (preprocess (pps ppx_deriving_yojson)))
 
 (rule
  (alias bench)
+ (package irmin-bench)
  (deps main.exe)
  (action (progn)))
 
@@ -17,6 +19,7 @@
 
 (rule
  (alias runbench-type)
+ (package irmin-bench)
  (deps (universe))
  (action
   (run %{exe:main.exe})))

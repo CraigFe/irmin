@@ -2,8 +2,7 @@ open Bechamel
 open Toolkit
 module T = Irmin.Type
 module Hash = Irmin.Hash.BLAKE2B
-
-let ( >> ) f g x = g (f x)
+open Output
 
 module Generic_op = struct
   type op =
@@ -199,48 +198,6 @@ let suite =
       test_operation ~name:"pre_hash" Generic_op.pre_hash;
     ]
 
-type csv_line = { bench_name : string; metric : string; value : float }
-
-let compare_csv_line a b =
-  match String.compare a.bench_name b.bench_name with
-  | 0 -> (
-      match String.compare a.metric b.metric with
-      | 0 -> Float.compare a.value b.value
-      | o -> o)
-  | o -> o
-
-let unit_of_metric = function
-  | "major-allocated" -> "words"
-  | "minor-allocated" -> "words"
-  | "monotonic-clock" -> "ns"
-  | s -> Fmt.failwith "Unexpected unit: %s" s
-
-let pp_results_csv ppf results =
-  Fmt.string ppf "bench_name,metric,value\n";
-  Hashtbl.fold
-    (fun metric bench_values ->
-      Hashtbl.fold
-        (fun bench_name analysis ->
-          let value, _ =
-            let open Bechamel.Analyze.OLS in
-            match (estimates analysis, predictors analysis) with
-            | Some [ value ], [ "run" ] -> (value, ())
-            | estimates, predictors ->
-                Fmt.failwith
-                  "Unexpected results: { estimates = %a; predictors = %a }"
-                  Fmt.(Dump.option (Dump.list float))
-                  estimates
-                  Fmt.(Dump.list string)
-                  predictors
-          in
-          List.cons { metric; bench_name; value })
-        bench_values)
-    results []
-  |> List.sort compare_csv_line
-  |> List.iter (fun { bench_name; metric; value } ->
-         Fmt.pf ppf "%s,%s (%s),%f\n" bench_name metric (unit_of_metric metric)
-           value)
-
 let benchmark () =
   Fmt.epr "Running benchmarks\n%!";
   let ols =
@@ -250,10 +207,10 @@ let benchmark () =
     Instance.[ minor_allocated; major_allocated; monotonic_clock ]
   in
   let raw_results =
-    let quota = Mtime.Span.of_uint64_ns 1_000_000_000L (* 1s *) in
+    let quota = Mtime.Span.of_uint64_ns 1_000L (* 1s *) in
     Benchmark.all (Benchmark.cfg ~run:nb_runs ~quota ()) instances suite
   in
   List.map (fun instance -> Analyze.all ols instance raw_results) instances
   |> Analyze.merge ols instances
 
-let () = benchmark () |> Fmt.pr "%a%!" pp_results_csv
+let () = benchmark () |> Fmt.pr "%a%!" pp_results
