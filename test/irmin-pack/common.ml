@@ -99,3 +99,23 @@ struct
     Index.close index;
     Pack.close pack
 end
+
+module Alcotest = struct
+  include Alcotest
+
+  (** TODO: upstream this to Alcotest *)
+  let check_raises_lwt msg exn (type a) (f : unit -> a Lwt.t) =
+    Lwt.catch
+      (fun x ->
+        f x >>= fun (_ : a) ->
+        Alcotest.failf
+          "Fail %s: expected function to raise %s, but it returned instead." msg
+          (Printexc.to_string exn))
+      (function
+        | e when e = exn -> Lwt.return_unit
+        | e ->
+            Alcotest.failf
+              "Fail %s: expected function to raise %s, but it raised %s \
+               instead."
+              msg (Printexc.to_string exn) (Printexc.to_string e))
+end

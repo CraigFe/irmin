@@ -18,12 +18,14 @@ type version = [ `V1 | `V2 ]
 
 val pp_version : version Fmt.t
 
+type path = string
+
 module type S = sig
   type t
 
   exception RO_Not_Allowed
 
-  val v : version:version -> fresh:bool -> readonly:bool -> string -> t
+  val v : version:version -> fresh:bool -> readonly:bool -> path -> t
 
   val name : t -> string
 
@@ -47,13 +49,18 @@ module type S = sig
 
   val version : t -> version
 
+  val unsafe_set_version : t -> version -> unit
+
   val flush : t -> unit
 
   val close : t -> unit
 
-  val rename_dir : src:string -> dst:string -> unit
-
-  val tmp_dir : string -> string
+  val upgrade :
+    src:t ->
+    dst:path * version ->
+    progress:(offset:int64 -> unit) ->
+    (unit, [> `Msg of string ]) result
+  (** @raise Invalid_arg if the migration path is not supported. *)
 end
 
 module Unix : S

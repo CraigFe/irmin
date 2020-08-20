@@ -34,12 +34,14 @@ let version_of_bin b =
   try Some (List.assoc b (List.map (fun (x, y) -> (y, x)) versions))
   with Not_found -> None
 
+type path = string
+
 module type S = sig
   type t
 
   exception RO_Not_Allowed
 
-  val v : version:version -> fresh:bool -> readonly:bool -> string -> t
+  val v : version:version -> fresh:bool -> readonly:bool -> path -> t
 
   val name : t -> string
 
@@ -67,9 +69,8 @@ module type S = sig
 
   val close : t -> unit
 
-  val rename_dir : src:string -> dst:string -> unit
-
-  val tmp_dir : string -> string
+  val upgrade :
+    src:t -> dst:path * version -> (unit, [> `Msg of string ]) result
 end
 
 let ( ++ ) = Int64.add
@@ -87,8 +88,8 @@ module Unix : S = struct
     mutable generation : int64;
     mutable offset : int64;
     mutable flushed : int64;
+    mutable version : version;
     readonly : bool;
-    version : version;
     buf : Buffer.t;
   }
 
@@ -157,7 +158,8 @@ module Unix : S = struct
     t.generation
 
   let version t =
-    Log.debug (fun l -> l "version %a" pp_version t.version);
+    Log.debug (fun l ->
+        l "[%s] version %a" (Filename.basename t.file) pp_version t.version);
     t.version
 
   let readonly t = t.readonly
@@ -185,11 +187,11 @@ module Unix : S = struct
     in
     aux dirname (fun () -> ())
 
-  let raw ~mode ~version ~generation file =
-    let x = Unix.openfile file Unix.[ O_CREAT; mode; O_CLOEXEC ] 0o644 in
+  let raw ~flags ~version ~offset ~generation file =
+    let x = Unix.openfile file flags 0o644 in
     let raw = Raw.v x in
     let header =
-      { Raw.Header.version = bin_of_version version; offset = 0L; generation }
+      { Raw.Header.version = bin_of_version version; offset; generation }
     in
     Raw.Header.set raw header;
     raw
@@ -213,7 +215,9 @@ module Unix : S = struct
       Unix.unlink t.file;
       (* and re-open a fresh instance. *)
       t.raw <-
-        raw ~version:t.version ~generation:t.generation ~mode:Unix.O_RDWR t.file)
+        raw ~version:t.version ~generation:t.generation ~offset:0L
+          ~flags:Unix.[ O_CREAT; O_RDWR; O_CLOEXEC ]
+          t.file)
 
   let clear t =
     match t.version with
@@ -237,7 +241,11 @@ module Unix : S = struct
     mkdir (Filename.dirname file);
     match Sys.file_exists file with
     | false ->
-        let raw = raw ~mode ~version:current_version ~generation:0L file in
+        let raw =
+          raw
+            ~flags:[ O_CREAT; mode; O_CLOEXEC ]
+            ~version:current_version ~offset:0L ~generation:0L file
+        in
         v ~offset:0L ~version:current_version ~generation:0L raw
     | true -> (
         let x = Unix.openfile file Unix.[ O_EXCL; mode; O_CLOEXEC ] 0o644 in
@@ -272,28 +280,55 @@ module Unix : S = struct
 
   let close t = Raw.close t.raw
 
-  let rmdir path =
-    let rec aux path =
-      match Sys.is_directory path with
-      | true ->
-          Sys.readdir path |> Array.iter (fun name -> aux (path // name));
-          Unix.rmdir path
-      | false -> Sys.remove path
+  (* From a given offset in [src], transfer all data to [dst] (starting at [dst_off]). *)
+  let transfer_all ~progress:_ ~src ~src_off ~dst ~dst_off =
+    let ( + ) a b = Int64.(add a (of_int b)) in
+    let buf_len = 4096 in
+    let buf = Bytes.create buf_len in
+    let rec inner ~src_off ~dst_off =
+      match Raw.unsafe_read src ~off:src_off ~len:buf_len buf with
+      | 0 -> ()
+      | read ->
+          assert (read <= buf_len);
+          let to_write = if read < buf_len then Bytes.sub buf 0 read else buf in
+          let () =
+            Raw.unsafe_write dst ~off:dst_off (Bytes.unsafe_to_string to_write)
+          in
+          (inner [@tailcall]) ~src_off:(src_off + read) ~dst_off:(dst_off + read)
     in
-    aux path
+    inner ~src_off ~dst_off
 
-  let rename_dir ~src ~dst =
-    Log.debug (fun l -> l "rename_dir %s to %s" src dst);
-    rmdir dst;
-    Unix.rename src dst
-
-  (* Extracted from https://github.com/dbuenzli/bos *)
-  let tmp_dir pat =
-    let rand_path =
-      let rand = Random.State.(bits (make_self_init ())) land 0xFFFFFF in
-      Printf.sprintf "%s-%06x" pat rand
+  let upgrade ~src ~dst:(dst_path, dst_v) ~progress =
+    let src_v =
+      let v_bin = Raw.Version.get src.raw in
+      match version_of_bin v_bin with
+      | None -> Fmt.failwith "Could not parse version string `%s'" v_bin
+      | Some v -> v
     in
-    Filename.get_temp_dir_name () // rand_path
+    let src_offset = Raw.Offset.get src.raw in
+    match (src_v, dst_v) with
+    | `V1, `V2 ->
+        Log.debug (fun m ->
+            m "[%s] Performing migration: %a → %a"
+              (Filename.basename src.file)
+              pp_version `V1 pp_version `V2);
+        let dst =
+          (* Note: all V1 files implicitly have [generation = 0], since it
+             is not possible to [clear] them. *)
+          raw dst_path
+            ~flags:[ Unix.O_CREAT; O_WRONLY; O_APPEND ]
+            ~version:`V2 ~offset:src_offset ~generation:0L
+        in
+        transfer_all ~src:src.raw
+          ~src_off:(header `V1)
+          ~dst
+          ~dst_off:(header `V2);
+        Raw.close dst;
+        Ok ()
+    | _, _ ->
+        Fmt.invalid_arg "[%s] Unsupported migration path: %a → %a"
+          (Filename.basename src.file)
+          pp_version src_v pp_version dst_v
 end
 
 let with_cache ~v ~clear ~valid file =

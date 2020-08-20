@@ -20,6 +20,8 @@ module Log = (val Logs.src_log src : Logs.LOG)
 
 let current_version = `V2
 
+let ( // ) = Filename.concat
+
 module Default = struct
   let fresh = false
 
@@ -111,11 +113,18 @@ open Lwt.Infix
 module Pack = Pack
 module Dict = Pack_dict
 module Index = Pack_index
+
+exception RO_Not_Allowed = IO.Unix.RO_Not_Allowed
+
+exception Unsupported_version of IO.version
+
+let () =
+  Printexc.register_printer (function
+    | Unsupported_version v ->
+        Some (Fmt.str "Irmin_pack.Unsupported_version(%a)" IO.pp_version v)
+    | _ -> None)
+
 module IO = IO.Unix
-
-exception RO_Not_Allowed = IO.RO_Not_Allowed
-
-exception Unsupported_version of string
 
 module Table (K : Irmin.Type.S) = Hashtbl.Make (struct
   type t = K.t
@@ -558,9 +567,12 @@ struct
       let v config =
         unsafe_v config >>= fun t ->
         match Contents.CA.version (contents_t t) with
-        | `V1 ->
+        | `V1 as v ->
             close t >>= fun () ->
-            Lwt.fail (Unsupported_version (Fmt.str "%a" pp_version `V1))
+            Log.err (fun m ->
+                m "[%s] Attempted to open store of unsupported version %a"
+                  (root config) pp_version v);
+            Lwt.fail (Unsupported_version `V1)
         | `V2 -> Lwt.return t
 
       (** Stores share instances in memory, one sync is enough. However each
@@ -575,67 +587,42 @@ struct
       (** Stores share instances so one clear is enough. *)
       let clear t = Contents.CA.clear (contents_t t)
 
-      let migrate_stores v1 v2 =
-        let nb_commits = ref 0 in
-        let nb_nodes = ref 0 in
-        let nb_contents = ref 0 in
-        let contents = contents_t v1 in
-        let nodes = node_t v1 |> snd in
-        let commits = commit_t v1 |> snd in
-        let pp_stats () =
-          Log.app (fun l ->
-              l "\t%dk contents / %dk nodes / %dk commits" (!nb_contents / 1000)
-                (!nb_nodes / 1000) (!nb_commits / 1000))
-        in
-        let count_increment count =
-          incr count;
-          if !count mod 1000 = 0 then pp_stats ()
-        in
-        let f k (offset, length, m) =
-          match m with
-          | 'B' ->
-              count_increment nb_contents;
-              contents_t v2 |> Contents.CA.copy_entry ~offset ~length k contents
-          | 'N' | 'I' ->
-              count_increment nb_nodes;
-              node_t v2 |> snd |> Node.CA.copy_entry ~offset ~length k nodes
-          | 'C' ->
-              count_increment nb_commits;
-              commit_t v2
-              |> snd
-              |> Commit.CA.copy_entry ~offset ~length k commits
-          | c -> Fmt.failwith "Unknown content type: %c" c
-        in
-        Index.iter f v1.index
-
       let migrate config =
         if readonly config then Lwt.fail RO_Not_Allowed
         else
           let config = Irmin.Private.Conf.add config readonly_key true in
+          Log.info (fun l -> l "[%s] migrate" (root config));
           unsafe_v config >>= fun t ->
           match Contents.CA.version (contents_t t) with
-          | `V2 ->
-              Log.app (fun l -> l "store is already in current version");
+          | `V2 as v ->
+              Log.app (fun l ->
+                  l "Store at %s is already in current version (%a)"
+                    (root config) pp_version v);
               close t
           | `V1 ->
-              let v1 = t in
-              (*open a fresh, read-write store in V2 *)
-              let root = root config in
-              let root_v2 = IO.tmp_dir "irmin-migrate" in
-              let config =
-                Irmin.Private.Conf.add config root_key (Some root_v2)
+              let root_old = root config in
+              let root_tmp =
+                let rand =
+                  Random.State.(bits (make_self_init ())) land 0xFFFFFF
+                in
+                root_old // Fmt.str "tmp-migrate-%06x" rand
               in
-              let config = Irmin.Private.Conf.add config readonly_key false in
-              let config = Irmin.Private.Conf.add config fresh_key true in
-              v config >>= fun v2 ->
-              (*copy index entries from v1 to v2*)
-              migrate_stores v1 v2;
-              (*copy branches from v1 to v2*)
-              Branch.iter (branch_t v1) (Branch.set (branch_t v2)) >>= fun () ->
-              close v1 >>= fun () ->
-              close v2 >|= fun () ->
-              (*rename v2 store and erase v1 store *)
-              IO.rename_dir ~src:root_v2 ~dst:root
+              Log.debug (fun l ->
+                  l "Creating temporary directory `%s' for the migrated store"
+                    root_tmp);
+              Unix.mkdir root_tmp 0o777;
+              let migrate_io name =
+                let old, tmp = (root_old // name, root_tmp // name) in
+                let src = IO.v ~version:`V1 ~fresh:false ~readonly:true old in
+                IO.upgrade ~src ~dst:(tmp, `V2) |> function
+                | Ok () ->
+                    Unix.unlink old;
+                    Unix.rename tmp old
+                | Error (`Msg s) -> invalid_arg s
+              in
+              List.iter migrate_io
+                [ "store.pack"; "store.branches"; "store.dict" ];
+              Lwt.return_unit
     end
   end
 

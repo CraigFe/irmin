@@ -118,7 +118,7 @@ module Dict = struct
     ignore_int (Dict.index dict "titiabc");
     ignore_int (Dict.index dict "foo");
     Dict.flush dict;
-    Dict.sync ~force_refill:false r;
+    Dict.sync r;
     check_index "titiabc" 3;
     check_index "bar" 1;
     check_index "toto" 2;
@@ -128,7 +128,7 @@ module Dict = struct
     check_raise "hello";
     check_none "hello" 4;
     Dict.flush dict;
-    Dict.sync ~force_refill:false r;
+    Dict.sync r;
     check_find "hello" 4;
     Dict.close dict;
     Dict.close r

@@ -39,7 +39,7 @@ module Index = Pack_index
 
 exception RO_Not_Allowed
 
-exception Unsupported_version of string
+exception Unsupported_version of IO.version
 
 module type CONFIG = sig
   val entries : int
@@ -73,7 +73,10 @@ module type Stores_extra = sig
 
   val migrate : Irmin.config -> unit Lwt.t
   (** [migrate conf] migrates a store with configuration [conf] to the current
-      version. Raises [RO_Not_Allowed] if called by a readonly instance. *)
+      version.
+
+      {b Note:} performing concurrent store operations during the migration will
+      result in undefined behaviour. *)
 end
 
 module Make_ext

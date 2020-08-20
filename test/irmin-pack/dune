@@ -2,7 +2,7 @@
  (name test_pack)
  (modules test_pack multiple_instances migration)
  (libraries alcotest fmt common index irmin irmin-test irmin-pack logs lwt
-   lwt.unix))
+   lwt.unix fpath))
 
 (executable
  (name test)
@@ -12,8 +12,6 @@
 (rule
  (alias runtest)
  (package irmin-pack)
- (deps
-  (source_tree data/version_1))
  (action
   (run ./test.exe -q --color=always)))
 

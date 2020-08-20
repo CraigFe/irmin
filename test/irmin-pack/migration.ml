@@ -1,32 +1,56 @@
+[@@@warning "-32"]
+
 open Lwt.Infix
 open Common
+
+let ( let* ) x f = Lwt.bind x f
 
 let src = Logs.Src.create "tests.migration" ~doc:"Test migrations"
 
 module Log = (val Logs.src_log src : Logs.LOG)
 
 module Hash = Irmin.Hash.SHA1
-module S =
+module Make () =
   Irmin_pack.Make (Conf) (Irmin.Metadata.None) (Irmin.Contents.String)
     (Irmin.Path.String_list)
     (Irmin.Branch.String)
     (Hash)
+
+module S = Make ()
 
 let config ?(readonly = false) ?(fresh = true) root =
   Irmin_pack.config ~readonly ?index_log_size ~fresh root
 
 let info () = Irmin.Info.empty
 
-let root_V1_source, root_V1, root_V2 =
-  let ( / ) = Filename.concat in
-  ("data" / "version_1", "_build" / "version_1", "_build" / "version_2")
+let rec repeat = function
+  | 0 -> fun _f x -> x
+  | n -> fun f x -> f (repeat (n - 1) f x)
 
-(** testV1 is a store in V1 used to test the migration to V2 *)
+(** The current working directory depends on whether the test binary is directly
+    run or is triggered with [dune exec], [dune runtest]. We normalise by
+    switching to the project root first. *)
+let goto_project_root () =
+  let cwd = Fpath.v (Sys.getcwd ()) in
+  match cwd |> Fpath.segs |> List.rev with
+  | "irmin-pack" :: "test" :: "default" :: "_build" :: _ ->
+      let root = cwd |> repeat 4 Fpath.parent in
+      Unix.chdir (Fpath.to_string root)
+  | _ -> ()
+
+let root_v1_archive, root_v1 =
+  let open Fpath in
+  ( v "test" / "irmin-pack" / "data" / "version_1" |> to_string,
+    v "_build" / "test_pack_migrate_1_to_2" |> to_string )
+
 let setup_test_env () =
-  rm_dir root_V1;
-  rm_dir root_V2;
-  let cmd = Printf.sprintf "cp -rp %s %s" root_V1_source root_V1 in
-  Fmt.epr "exec: %s\n%!" cmd;
+  goto_project_root ();
+  rm_dir root_v1;
+  let cmd =
+    Filename.quote_command "cp"
+      [ "--recursive"; "-p"; root_v1_archive; root_v1 ]
+  in
+  Log.info (fun l -> l "exec: %s\n%!" cmd);
   match Sys.command cmd with
   | 0 -> ()
   | n ->
@@ -35,65 +59,76 @@ let setup_test_env () =
          non-zero exit code %d"
         cmd n
 
-(** Opening a store in V1 fails. The store is then migrated to V2. After
-    migration, the store in V2 is opened, old values are readable and new values
-    can be added. We can test that the V2 store can be opened in RO mode *)
-let test () =
+let archive : (S.branch * (S.key * S.contents) list) list =
+  [
+    ("bar", [ ([ "a"; "d" ], "x"); ([ "a"; "b"; "c" ], "z") ]);
+    ("foo", [ ([ "b" ], "y") ]);
+  ]
+
+let check_commit repo commit bindings =
+  commit |> S.Commit.hash |> S.Commit.of_hash repo >>= function
+  | None ->
+      Alcotest.failf "Commit `%a' is dangling in repo" S.Commit.pp_hash commit
+  | Some commit ->
+      let tree = S.Commit.tree commit in
+      bindings
+      |> Lwt_list.iter_s (fun (key, value) ->
+             S.Tree.find tree key
+             >|= Alcotest.(check (option string))
+                   (Fmt.strf "Expected binding [%a ↦ %s]"
+                      Fmt.(Dump.list string)
+                      key value)
+                   (Some value))
+
+let check_repo repo structure =
+  structure
+  |> Lwt_list.iter_s @@ fun (branch, bindings) ->
+     S.Branch.find repo branch >>= function
+     | None -> Alcotest.failf "Couldn't find expected branch `%s'" branch
+     | Some commit -> check_commit repo commit bindings
+
+let pair_map f (a, b) = (f a, f b)
+
+let v1_to_v2 () =
   setup_test_env ();
-  let check repo commit msg k v =
-    S.Commit.of_hash repo (S.Commit.hash commit) >>= function
-    | None -> Alcotest.fail "no hash"
-    | Some commit ->
-        let tree = S.Commit.tree commit in
-        S.Tree.find tree k >|= fun x ->
-        Alcotest.(check (option string)) msg (Some v) x
+  let conf_ro, conf_rw =
+    pair_map
+      (fun readonly -> config ~readonly ~fresh:false root_v1)
+      (true, false)
   in
-  let check_old_values r =
-    (S.Branch.find r "bar" >>= function
-     | None -> Alcotest.failf "branch bar not found"
-     | Some commit ->
-         check r commit "check old values a" [ "a"; "d" ] "x" >>= fun () ->
-         check r commit "check old values a/b/c/" [ "a"; "b"; "c" ] "z")
-    >>= fun () ->
-    S.Branch.find r "foo" >>= function
-    | None -> Alcotest.failf "branch foo not found"
-    | Some commit -> check r commit "check old values b" [ "b" ] "y"
+  let* () =
+    Alcotest.check_raises_lwt "Opening a V1 store should fail"
+      (Irmin_pack.Unsupported_version `V1)
+      (fun () -> S.Repo.v conf_ro)
   in
-  (* dune removes the write permission from root_V1, we can only open it in
-     readonly mode in the tests. *)
-  let conf = config ~readonly:true ~fresh:false root_V1 in
-  Lwt.catch
-    (fun () ->
-      S.Repo.v conf >>= fun _ ->
-      Alcotest.fail "V1 stores are no longer supported.")
-    (function
-      | Irmin_pack.Unsupported_version "v1" -> Lwt.return_unit
-      | exn -> Lwt.fail exn)
-  >>= fun () ->
-  Lwt.catch
-    (fun () ->
-      let conf = config ~readonly:true ~fresh:false root_V1 in
-      S.migrate conf >>= fun _ -> Alcotest.fail "RO cannot call migrate")
-    (function
-      | Irmin_pack.RO_Not_Allowed -> Lwt.return_unit | exn -> Lwt.fail exn)
-  >>= fun () ->
-  let conf = config ~readonly:false ~fresh:false root_V1 in
-  S.migrate conf >>= fun () ->
-  S.Repo.v conf >>= fun r ->
-  check_old_values r >>= fun () ->
-  S.Tree.add S.Tree.empty [ "c" ] "x" >>= fun tree ->
-  S.Commit.v r ~parents:[] ~info:(info ()) tree >>= fun c ->
-  check r c "check new values" [ "c" ] "x" >>= fun () ->
-  S.Repo.close r >>= fun () ->
-  S.migrate conf >>= fun () ->
-  S.Repo.v (config ~readonly:false ~fresh:false root_V1) >>= fun r ->
-  S.Repo.v (config ~readonly:true ~fresh:false root_V1) >>= fun ro ->
-  check_old_values ro >>= fun () ->
-  check ro c "check new values after reopening" [ "c" ] "x" >>= fun () ->
-  S.Repo.close r >>= fun () -> S.Repo.close ro
+  let* () =
+    Alcotest.check_raises_lwt "Migrating with RO config should fail"
+      Irmin_pack.RO_Not_Allowed (fun () -> S.migrate conf_ro)
+  in
+  let* () =
+    Log.app (fun m -> m "Running the migration with a RW config");
+    S.migrate conf_rw
+  in
+  let* r = S.Repo.v conf_rw in
+  let* () = check_repo r archive in
+  let* new_commit =
+    S.Tree.add S.Tree.empty [ "c" ] "x"
+    >>= S.Commit.v r ~parents:[] ~info:(info ())
+  in
+  let* () = check_commit r new_commit [ ([ "c" ], "x") ] in
+  let* () = S.Repo.close r in
+  let* () = S.migrate conf_rw in
+  let* r = S.Repo.v conf_rw in
+  let* ro = S.Repo.v conf_ro in
+  let* () = check_repo ro archive in
+  let* () = check_commit ro new_commit [ ([ "c" ], "x") ] in
+  let* () = S.Repo.close r in
+  Lwt.return_unit
+
+(* S.Repo.close ro *)
 
 let tests =
   [
     Alcotest.test_case "Test migration V1 to V2" `Quick (fun () ->
-        Lwt_main.run (test ()));
+        Lwt_main.run (v1_to_v2 ()));
   ]
