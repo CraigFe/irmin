@@ -45,6 +45,12 @@
   - Added a `migrate` function for upgrading stores with old formats (#TODO,
     @icristescu, @CraigFe)
 
+- **ppx_irmin**:
+
+  - Added support for deriving type representations for types with type
+    parameters. Type `'a t` generateseara representation of type
+    `'a Type.t -> 'a t Type.t` (TODO, @CraigFe)
+
 #### Changed
 
 - **irmin**
