@@ -56,6 +56,9 @@
     type representations using combinators in the `Foo` module). (TODO,
     @CraigFe)
 
+  - Added an extension point `[typ: <core-type>]` for deriving type
+    representations inline. (TODO, @CraigFe)
+
 #### Changed
 
 - **irmin**
