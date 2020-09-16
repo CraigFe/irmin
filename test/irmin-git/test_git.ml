@@ -37,16 +37,9 @@ module type G = sig
 end
 
 module X = struct
-  type t = X of (int * int) | Y of string list
+  type t = X of (int * int) | Y of string list [@@deriving irmin]
 
-  let t : t Irmin.Type.t =
-    let open Irmin.Type in
-    variant "test" (fun x y -> function X i -> x i | Y i -> y i)
-    |~ case1 "x" (pair int int) (fun x -> X x)
-    |~ case1 "y" (list string) (fun y -> Y y)
-    |> sealv
-
-  let merge = Irmin.Merge.idempotent Irmin.Type.(option t)
+  let merge = Irmin.Merge.idempotent [%typ: t option]
 end
 
 module type X =
