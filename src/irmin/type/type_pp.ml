@@ -14,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-open Type_core
+open Type_initial
 
 (* Polyfill for [Float.is_nan] which is only >=4.08. *)
 let is_nan x = Float.classify_float x = FP_nan

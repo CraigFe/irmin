@@ -14,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-open Type_core
+open Type_initial
 
 val equal : 'a t -> 'a equal
 

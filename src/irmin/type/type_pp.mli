@@ -14,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-open Type_core
+open Type_initial
 
 val t : 'a t -> 'a Fmt.t
 
