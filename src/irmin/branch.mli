@@ -14,6 +14,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-(** Handling of branches. *)
+(** Handling of branches. {!} *)
 
 module String : S.BRANCH with type t = string
