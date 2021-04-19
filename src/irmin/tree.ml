@@ -194,10 +194,7 @@ module Make (P : Private.S) = struct
       let info = { hash; value } in
       { v; info }
 
-    let pp_id = Type.pp id_t
-
     let export ?clear:(c = true) repo t k =
-      Fmt.epr "XXX Tree.Contents.export %a\n%!" pp_id k;
       if c then clear t;
       t.info.hash <- Some (P.Contents.Key.hash k);
       t.v <- Id (repo, k)
@@ -503,7 +500,6 @@ module Make (P : Private.S) = struct
     and value_of_map : type r. t -> map -> (value, r) cont =
      fun t map k ->
       if StepMap.is_empty map then (
-        Fmt.epr "XXX cache value 0\n%!";
         t.info.value <- Some P.Node.Val.empty;
         k P.Node.Val.empty)
       else
@@ -511,11 +507,7 @@ module Make (P : Private.S) = struct
         let rec aux acc = function
           | [] ->
               cnt.node_val_v <- cnt.node_val_v + 1;
-              Fmt.epr "XXX cache value -- %a\n%!"
-                Type.(pp (list (pair P.Node.Path.step_t P.Node.Val.value_t)))
-                acc;
               let v = P.Node.Val.v (List.rev acc) in
-              Fmt.epr "XXX cache value 1: %a\n%!" (Type.pp P.Node.Val.t) v;
               t.info.value <- Some v;
               k v
           | (step, v) :: rest -> (
@@ -526,7 +518,6 @@ module Make (P : Private.S) = struct
                     | Some id -> id
                     | None ->
                         (* FIXME: metadata *)
-                        Fmt.epr "XXX Contents.Key.v\n%!";
                         P.Contents.Key.v (Contents.hash c)
                   in
                   let v = `Contents (id, m) in
@@ -538,7 +529,6 @@ module Make (P : Private.S) = struct
                   | None ->
                       hash n (fun h ->
                           (* FIXME: metadata *)
-                          Fmt.epr "XXX Node.Key.v\n%!";
                           let id = P.Node.Key.v h in
                           return id)))
         in
@@ -567,7 +557,6 @@ module Make (P : Private.S) = struct
       let updates = StepMap.bindings updates in
       let rec aux acc = function
         | [] ->
-            Fmt.epr "XXX cache value 2\n%!";
             t.info.value <- Some acc;
             k acc
         | (k, Add e) :: rest ->
@@ -583,11 +572,9 @@ module Make (P : Private.S) = struct
       | Some v -> Lwt.return_ok v
       | None -> (
           cnt.node_find <- cnt.node_find + 1;
-          Fmt.epr "XXX Tree.Node.value_of_id\n%!";
           P.Node.find (P.Repo.node_t repo) k >|= function
           | None -> Error (`Dangling_hash (P.Node.Key.hash k))
           | Some v as some_v ->
-              Fmt.epr "XXX cache value 3\n%!";
               t.info.value <- some_v;
               Ok v)
 
@@ -953,8 +940,6 @@ module Make (P : Private.S) = struct
           (v, t))
 
     let elt_t = elt_t t
-    let map_t = stepmap_t elt_t
-    let v_t = v_t elt_t
     let dump = Type.pp_json ~minify:false t
 
     let rec merge : type a. (t Merge.t -> a) -> a =
@@ -1017,7 +1002,6 @@ module Make (P : Private.S) = struct
 
     (* export t to the given repo and clear the cache *)
     let export ?clear:(c = true) repo t k =
-      Fmt.epr "XXX Tree.Node.export --> %a\n%!" pp_id k;
       if c then clear t;
       let is_empty =
         match t.v with
@@ -1027,8 +1011,7 @@ module Make (P : Private.S) = struct
       in
       if is_empty then t.info.value <- Some P.Node.Val.empty;
       t.info.hash <- Some (P.Node.Key.hash k);
-      t.v <- Id (repo, k);
-      Fmt.epr "XXX Tree.Node.export <-- %a\n%!" (Type.pp v_t) t.v
+      t.v <- Id (repo, k)
   end
 
   type node = Node.t [@@deriving irmin]
@@ -1339,15 +1322,10 @@ module Make (P : Private.S) = struct
     | `Contents (k, m) -> `Contents (Contents.of_id repo k, m)
 
   let value_of_map t map = Node.value_of_map t map (fun x -> x)
-  let pp_node = Type.pp node_t
 
   let export ?clear repo contents_t node_t n =
-    Fmt.epr "XXX EXPORT START %a\n%!" pp_node n;
     let seen = Hashes.create 127 in
     let add_node n v () =
-      let pp_node = Type.pp P.Node.Val.t in
-      let pp_node' = Type.pp Node.t in
-      Fmt.epr "XXX EXPORT ADD NODE n=%a v=%a\n%!" pp_node' n pp_node v;
       cnt.node_add <- cnt.node_add + 1;
       let+ k = P.Node.add node_t v in
       let h = Node.hash n in
@@ -1355,21 +1333,14 @@ module Make (P : Private.S) = struct
       Node.export ?clear repo n k
     in
     let add_contents c x () =
-      let pp_contents = Type.pp Contents.t in
-      let pp_id = Type.pp Contents.id_t in
-      Fmt.epr "XXX/0 EXPORT ADD CONTENTS %a\n%!" pp_contents c;
       cnt.contents_add <- cnt.contents_add + 1;
       let+ k = P.Contents.add contents_t x in
       let h = Contents.hash c in
       assert (Contents.equal_hash (P.Contents.Key.hash k) h);
-      Contents.export ?clear repo c k;
-      Fmt.epr "XXX/1 EXPORT ADD CONTENTS %a %a\n%!" pp_id k pp_contents c
+      Contents.export ?clear repo c k
     in
 
-    let add_node_map n x () =
-      Fmt.epr "XXX EXPORT add_node_map\n%!";
-      add_node n (value_of_map n x) ()
-    in
+    let add_node_map n x () = add_node n (value_of_map n x) () in
     let todo = Stack.create () in
     let rec add_to_todo : type a. _ -> (unit -> a Lwt.t) -> a Lwt.t =
      fun n k ->
@@ -1382,7 +1353,6 @@ module Make (P : Private.S) = struct
             Node.export ?clear repo n id;
             k ()
         | Node.Value (_, x, None) ->
-            Fmt.epr "XXX export 1\n%!";
             Stack.push (add_node n x) todo;
             k ()
         | Map _ | Value (_, _, Some _) -> (
@@ -1398,11 +1368,9 @@ module Make (P : Private.S) = struct
                        (while the thread was block on P.Node.mem *)
                     k ()
                 | Map children ->
-                    Fmt.epr "XXX export 2 %a\n%!" (Type.pp Node.map_t) children;
                     let l = StepMap.bindings children |> List.map snd in
                     add_steps_to_todo l n k
                 | Value (_, _, Some children) ->
-                    Fmt.epr "XXX export 3\n%!";
                     let l =
                       StepMap.bindings children
                       |> List.filter_map (function
@@ -1412,12 +1380,10 @@ module Make (P : Private.S) = struct
                     add_steps_to_todo l n k)))
     and add_steps_to_todo : type a. _ -> _ -> (unit -> a Lwt.t) -> a Lwt.t =
      fun l n k ->
-      Fmt.epr "XXX add_steps_to_todo %a\n%!" pp_node n;
       (* 1. convert partial values to total values *)
       let* () =
         match n.Node.v with
         | Value (_, _, Some _) -> (
-            Fmt.epr "XXX export: partial\n%!";
             Node.to_value n >|= function
             | Error (`Dangling_hash _) -> ()
             | Ok v -> n.v <- Value (repo, v, None))
@@ -1426,12 +1392,8 @@ module Make (P : Private.S) = struct
       (* 2. push the current node job on the stack. *)
       let () =
         match (n.v, Node.cached_value n) with
-        | Map x, _ ->
-            Fmt.epr "XXX export: cached map\n%!";
-            Stack.push (add_node_map n x) todo
-        | _, Some v ->
-            Fmt.epr "XXX export: cached node\n%!";
-            Stack.push (add_node n v) todo
+        | Map x, _ -> Stack.push (add_node_map n x) todo
+        | _, Some v -> Stack.push (add_node n v) todo
         | _ -> assert false
       in
       let contents = ref [] in
@@ -1459,7 +1421,6 @@ module Make (P : Private.S) = struct
         (fun n ->
           Stack.push (fun () -> (add_to_todo [@tailcall]) n Lwt.return) todo)
         !nodes;
-      Fmt.epr "XXX add_steps_to_todo: DONE\n%!";
       k ()
     in
 

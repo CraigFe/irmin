@@ -1643,7 +1643,7 @@ module Make (S : S) = struct
           S.Branch.set repo "foo" k >>= fun () ->
           let* t = S.of_branch repo "foo" in
           let* vy' = S.find t [ "u"; "x"; "y" ] in
-          check_val "vy XXX after merge" None vy';
+          check_val "vy after merge" None vy';
           P.Repo.close repo
     in
     run x test
