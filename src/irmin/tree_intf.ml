@@ -22,7 +22,7 @@ module type S = sig
   type step
   type metadata
   type contents
-  type id
+  type contents_key
   type node
   type hash
 
@@ -81,9 +81,9 @@ module type S = sig
     type t
     (** The type of lazy tree contents. *)
 
-    val id : t -> id option
-    (** [id t] is the ID of the {!contents} value returned when [t] is {!force}d
-        successfully. *)
+    val key : t -> contents_key option
+    (** [key t] is the key of the {!contents} value returned when [t] is
+        {!force}d successfully. *)
 
     val force : t -> contents or_error Lwt.t
     (** [force t] forces evaluation of the lazy content value [t], or returns an
@@ -310,15 +310,15 @@ module type Sigs = sig
          and type step = P.Node.Path.step
          and type metadata = P.Node.Metadata.t
          and type contents = P.Contents.value
-         and type id = P.Contents.Key.t
+         and type contents_key = P.Contents.Key.t
          and type hash = P.Hash.t
 
-    type kinded_id =
+    type kinded_key =
       [ `Contents of P.Contents.Key.t * metadata | `Node of P.Node.Key.t ]
     [@@deriving irmin]
 
-    val import : P.Repo.t -> kinded_id -> t option Lwt.t
-    val import_no_check : P.Repo.t -> kinded_id -> t
+    val import : P.Repo.t -> kinded_key -> t option Lwt.t
+    val import_no_check : P.Repo.t -> kinded_key -> t
 
     val export :
       ?clear:bool ->
@@ -332,7 +332,7 @@ module type Sigs = sig
     val equal : t -> t -> bool
     val node_t : node Type.t
     val tree_t : t Type.t
-    val id : t -> kinded_id option
+    val key : t -> kinded_key option
     val hash : t -> hash
     val of_private_node : P.Repo.t -> P.Node.value -> node
     val to_private_node : node -> P.Node.value or_error Lwt.t

@@ -43,7 +43,7 @@ module Make_Layered (S : Layered_store) = struct
 
   let r1 ~repo =
     let* kn2 = n1 ~repo in
-    S.Tree.of_id repo (`Node kn2) >>= function
+    S.Tree.of_key repo (`Node kn2) >>= function
     | None -> Alcotest.fail "r1"
     | Some tree ->
         S.Commit.v repo ~info:(info "r1") ~parents:[] (tree :> S.tree)
@@ -52,10 +52,10 @@ module Make_Layered (S : Layered_store) = struct
     let* kn2 = n1 ~repo in
     let* kn3 = with_node repo (fun t -> Graph.v t [ ("a", `Node kn2) ]) in
     let* kr1 = r1 ~repo in
-    S.Tree.of_id repo (`Node kn3) >>= function
+    S.Tree.of_key repo (`Node kn3) >>= function
     | None -> Alcotest.fail "r2"
     | Some t3 ->
-        S.Commit.v repo ~info:(info "r2") ~parents:[ S.Commit.id kr1 ]
+        S.Commit.v repo ~info:(info "r2") ~parents:[ S.Commit.key kr1 ]
           (t3 :> S.tree)
 
   let fail_with_none f msg =
@@ -86,7 +86,9 @@ module Make_Layered (S : Layered_store) = struct
         with_info repo "commit kt3" (History.v ~node:kt3 ~parents:[ kr1 ])
       in
       let* t1 = P.Commit.find (h repo) kr1 in
-      let* commit = fail_with_none (S.Commit.of_id repo kr1) "of_hash commit" in
+      let* commit =
+        fail_with_none (S.Commit.of_key repo kr1) "of_hash commit"
+      in
       S.freeze repo ~max_lower:[ commit ] ~max_upper:[] >>= fun () ->
       let* t1' = P.Commit.find (h repo) kr1 in
       check_val "value of kr1 before and after freeze" t1 t1';
@@ -108,7 +110,9 @@ module Make_Layered (S : Layered_store) = struct
       let* kr2s = History.closure (h repo) ~min:[] ~max:[ kr2 ] in
       check_keys "closure over upper and lower" [ kr1; kr2 ] kr2s;
       let* t2 = P.Commit.find (h repo) kr2' in
-      let* commit = fail_with_none (S.Commit.of_id repo kr2') "of_id commit" in
+      let* commit =
+        fail_with_none (S.Commit.of_key repo kr2') "of_key commit"
+      in
       S.freeze repo ~max_lower:[ commit ] ~max_upper:[] >>= fun () ->
       let* t1' = P.Commit.find (h repo) kr1 in
       check_val "value of kr1 before and after snd freeze" t1 t1';
@@ -139,11 +143,11 @@ module Make_Layered (S : Layered_store) = struct
       let* tree = S.Tree.add tree [ "c"; "b"; "a" ] "x" in
       let* c0 = S.Commit.v repo ~info ~parents:[] tree in
       let* tree = S.Tree.add tree [ "c"; "b"; "a1" ] "x1" in
-      let* c1 = S.Commit.v repo ~info ~parents:[ S.Commit.id c0 ] tree in
+      let* c1 = S.Commit.v repo ~info ~parents:[ S.Commit.key c0 ] tree in
       let* tree = S.Tree.add tree [ "c"; "b"; "a2" ] "x2" in
-      let* c2 = S.Commit.v repo ~info ~parents:[ S.Commit.id c1 ] tree in
+      let* c2 = S.Commit.v repo ~info ~parents:[ S.Commit.key c1 ] tree in
       let* tree = S.Tree.add tree [ "c"; "b"; "a3" ] "x3" in
-      let* c3 = S.Commit.v repo ~info ~parents:[ S.Commit.id c1 ] tree in
+      let* c3 = S.Commit.v repo ~info ~parents:[ S.Commit.key c1 ] tree in
       Lwt.return (c2, c3)
     in
     (*
@@ -157,18 +161,18 @@ module Make_Layered (S : Layered_store) = struct
       let* tree = S.Tree.add tree [ "c"; "b2" ] "x5" in
       let* c5 = S.Commit.v repo ~info ~parents:[] tree in
       let* tree = S.Tree.add tree [ "c"; "b1"; "a" ] "x6" in
-      let* c6 = S.Commit.v repo ~info ~parents:[ S.Commit.id c5 ] tree in
+      let* c6 = S.Commit.v repo ~info ~parents:[ S.Commit.key c5 ] tree in
       let* tree = S.Tree.add tree [ "c"; "e" ] "x7" in
-      let* c7 = S.Commit.v repo ~info ~parents:[ S.Commit.id c6 ] tree in
+      let* c7 = S.Commit.v repo ~info ~parents:[ S.Commit.key c6 ] tree in
       let* tree = S.Tree.add tree [ "c"; "d" ] "x8" in
-      let* c8 = S.Commit.v repo ~info ~parents:[ S.Commit.id c6 ] tree in
+      let* c8 = S.Commit.v repo ~info ~parents:[ S.Commit.key c6 ] tree in
       Lwt.return (c4, c5, c7, c8)
     in
     let test repo =
       let* c2, c3 = tree1 repo in
-      let* t2 = P.Commit.find (h repo) (S.Commit.id c2) in
+      let* t2 = P.Commit.find (h repo) (S.Commit.key c2) in
       S.freeze repo ~max_lower:[ c2 ] ~max_upper:[] >>= fun () ->
-      let* t2' = P.Commit.find (h repo) (S.Commit.id c2) in
+      let* t2' = P.Commit.find (h repo) (S.Commit.key c2) in
       check_val "c2" t2 t2';
       let tree = S.Commit.tree c2 in
       let* x1 = S.Tree.find tree [ "c"; "b"; "a1" ] in
@@ -179,7 +183,7 @@ module Make_Layered (S : Layered_store) = struct
       Alcotest.(check (option string)) "x2" (Some "x2") x2;
       let* () =
         if not (S.async_freeze repo) then (
-          let* t3 = P.Commit.find (h repo) (S.Commit.id c3) in
+          let* t3 = P.Commit.find (h repo) (S.Commit.key c3) in
           check_val "c3" None t3;
           let* x3 = S.Tree.find tree [ "c"; "b"; "a3" ] in
           Alcotest.(check (option string)) "x3" None x3;
@@ -188,27 +192,27 @@ module Make_Layered (S : Layered_store) = struct
         else Lwt.return_unit
       in
       let* c4, c5, c7, c8 = tree2 repo in
-      let* t5 = P.Commit.find (h repo) (S.Commit.id c5) in
-      let* t7 = P.Commit.find (h repo) (S.Commit.id c7) in
+      let* t5 = P.Commit.find (h repo) (S.Commit.key c5) in
+      let* t7 = P.Commit.find (h repo) (S.Commit.key c7) in
       S.freeze repo ~max_lower:[ c7 ] ~max_upper:[] >>= fun () ->
-      let* t5' = P.Commit.find (h repo) (S.Commit.id c5) in
+      let* t5' = P.Commit.find (h repo) (S.Commit.key c5) in
       check_val "c5" t5 t5';
-      let* t7' = P.Commit.find (h repo) (S.Commit.id c7) in
+      let* t7' = P.Commit.find (h repo) (S.Commit.key c7) in
       check_val "c7" t7 t7';
       let* c7 =
-        fail_with_none (S.Commit.of_id repo (S.Commit.id c7)) "of_id commit"
+        fail_with_none (S.Commit.of_key repo (S.Commit.key c7)) "of_key commit"
       in
       let tree = S.Commit.tree c7 in
       let* x7 = S.Tree.find tree [ "c"; "e" ] in
       Alcotest.(check (option string)) "x7" (Some "x7") x7;
       let* () =
         if not (S.async_freeze repo) then (
-          let* t4 = P.Commit.find (h repo) (S.Commit.id c4) in
+          let* t4 = P.Commit.find (h repo) (S.Commit.key c4) in
           check_val "c4" None t4;
-          let* t8 = P.Commit.find (h repo) (S.Commit.id c8) in
+          let* t8 = P.Commit.find (h repo) (S.Commit.key c8) in
           check_val "c8" None t8;
           fail_with_some
-            (S.Commit.of_id repo (S.Commit.id c8))
+            (S.Commit.of_key repo (S.Commit.key c8))
             "should not find c8")
         else Lwt.return_unit
       in
@@ -238,7 +242,7 @@ module Make_Layered (S : Layered_store) = struct
     S.layer_id repo handler >|= check Irmin_layers.Layer_id.t msg exp
 
   let check_layer_for_commits repo commit msg exp =
-    check_layer repo (S.Commit_t (S.Commit.id commit)) msg exp
+    check_layer repo (S.Commit_t (S.Commit.key commit)) msg exp
 
   let test_set x () =
     let check_list = checks T.(pair S.Key.step_t S.tree_t) in
@@ -262,7 +266,7 @@ module Make_Layered (S : Layered_store) = struct
         check_layer_for_commits repo c2 "layer id of commit 2" `Upper0
       in
       let parents = S.Commit.parents c2 in
-      check_parents "parents of c2" [ S.Commit.id c1 ] parents;
+      check_parents "parents of c2" [ S.Commit.key c1 ] parents;
       let* s = S.get t [ "a"; "b"; "c" ] in
       (* read value from lower layers *)
       Alcotest.(check string) "commit 1" s v1;
@@ -385,22 +389,22 @@ module Make_Layered (S : Layered_store) = struct
         if not (S.async_freeze repo) then
           let* () =
             fail_with_some
-              (S.Commit.of_id repo (S.Commit.id c))
+              (S.Commit.of_key repo (S.Commit.key c))
               "should not find c"
           in
           let* () =
             fail_with_some
-              (S.Commit.of_id repo (S.Commit.id c1))
+              (S.Commit.of_key repo (S.Commit.key c1))
               "should not find c1"
           in
           let* () =
             fail_with_some
-              (S.Commit.of_id repo (S.Commit.id c2))
+              (S.Commit.of_key repo (S.Commit.key c2))
               "should not find c2"
           in
           let* _ =
             fail_with_none
-              (S.Commit.of_id repo (S.Commit.id c3))
+              (S.Commit.of_key repo (S.Commit.key c3))
               "should find c3"
           in
           Lwt.return_unit
@@ -450,7 +454,7 @@ module Make_Layered (S : Layered_store) = struct
         S.freeze repo ~min_lower:heads ~max_lower:heads ~max_upper:[]
       in
       let* () =
-        P.Commit.mem (P.Repo.commit_t repo) (S.Commit.id c1) >>= function
+        P.Commit.mem (P.Repo.commit_t repo) (S.Commit.key c1) >>= function
         | true ->
             if not (S.async_freeze repo) then
               check_layer_for_commits repo c1 "layer id commit 1" `Lower
@@ -459,7 +463,7 @@ module Make_Layered (S : Layered_store) = struct
             Alcotest.failf "did not copy commit %a to dst" S.Commit.pp_hash c1
       in
       let* () =
-        P.Commit.mem (P.Repo.commit_t repo) (S.Commit.id c2) >>= function
+        P.Commit.mem (P.Repo.commit_t repo) (S.Commit.key c2) >>= function
         | true ->
             if not (S.async_freeze repo) then
               check_layer_for_commits repo c2 "layer id commit 2" `Lower
@@ -482,14 +486,14 @@ module Make_Layered (S : Layered_store) = struct
       >>= fun () ->
       S.Private_layer.wait_for_freeze repo >>= fun () ->
       let* () =
-        P.Commit.mem (P.Repo.commit_t repo) (S.Commit.id c1) >|= function
+        P.Commit.mem (P.Repo.commit_t repo) (S.Commit.key c1) >|= function
         | true ->
             Alcotest.failf "should not copy commit %a to dst" S.Commit.pp_hash
               c1
         | false -> ()
       in
       let* () =
-        P.Commit.mem (P.Repo.commit_t repo) (S.Commit.id c2) >>= function
+        P.Commit.mem (P.Repo.commit_t repo) (S.Commit.key c2) >>= function
         | true -> check_layer_for_commits repo c2 "layer id commit 2" `Lower
         | false ->
             Alcotest.failf "should copy commit %a to dst" S.Commit.pp_hash c2
@@ -580,7 +584,9 @@ module Make_Layered (S : Layered_store) = struct
       let* h = S.Commit.v repo ~info ~parents:[] tree in
       S.Tree.clear tree;
       let* commit =
-        fail_with_none (S.Commit.of_id repo (S.Commit.id h)) "commit not found"
+        fail_with_none
+          (S.Commit.of_key repo (S.Commit.key h))
+          "commit not found"
       in
       let tree = S.Commit.tree commit in
       (* copy in upper too *)
@@ -617,7 +623,7 @@ module Make_Layered (S : Layered_store) = struct
       in
       (* Test that commit c1 and all its objects are preserved in upper after a
          freeze. *)
-      let* c1 = fail_with_none (S.Commit.of_id repo kr1) "of_id commit" in
+      let* c1 = fail_with_none (S.Commit.of_key repo kr1) "of_key commit" in
       (* copy in upper too *)
       S.freeze repo ~max_lower:[ c1 ] >>= fun () ->
       S.Private_layer.wait_for_freeze repo >>= fun () ->
@@ -642,7 +648,7 @@ module Make_Layered (S : Layered_store) = struct
       in
       (* Test that commits c1 and c2 are preserved in upper during and after a
          freeze. *)
-      let* c2 = fail_with_none (S.Commit.of_id repo kr2) "of_id commit" in
+      let* c2 = fail_with_none (S.Commit.of_key repo kr2) "of_key commit" in
       let* () =
         (* copy in upper too *)
         S.freeze repo ~min_upper:[ c1 ] ~max_lower:[ c2 ]
@@ -668,13 +674,13 @@ module Make_Layered (S : Layered_store) = struct
          a freeze. *)
       (* copy in upper too *)
       S.freeze repo ~max_lower:[ c1 ] >>= fun () ->
-      let* hv1 = fail_with_none (S.id foo [ "a"; "b"; "c" ]) "hash of v1'" in
-      let hv1 = get_contents_id hv1 in
+      let* hv1 = fail_with_none (S.key foo [ "a"; "b"; "c" ]) "hash of v1'" in
+      let hv1 = get_contents_key hv1 in
       check_layer_id repo (S.Content_t hv1) "layer id of v1" `Upper
       >>= fun () ->
       S.set_exn foo [ "a"; "d" ] v2 ~info:(infof "commit 2") >>= fun () ->
       let* c2 = S.Head.get foo in
-      let hc2 = S.Commit.id c2 in
+      let hc2 = S.Commit.key c2 in
       let* () =
         check_layer_id repo (S.Commit_t hc2) "layer_id commit 2" `Upper
       in
@@ -690,12 +696,12 @@ module Make_Layered (S : Layered_store) = struct
       in
       check_layer_id repo (S.Content_t hv1) "layer id of v1" `Upper
       >>= fun () ->
-      let* hv2 = fail_with_none (S.id foo [ "a"; "d" ]) "hash of v2'" in
-      let hv2 = get_contents_id hv2 in
+      let* hv2 = fail_with_none (S.key foo [ "a"; "d" ]) "hash of v2'" in
+      let hv2 = get_contents_key hv2 in
       check_layer_id repo (S.Content_t hv2) "layer id of v2" `Upper
       >>= fun () ->
       S.Private_layer.wait_for_freeze repo >>= fun () ->
-      let hc1 = S.Commit.id c1 in
+      let hc1 = S.Commit.key c1 in
       let* () =
         check_layer_id repo (S.Commit_t hc1) "layer_id commit 1" `Lower
       in
@@ -741,14 +747,14 @@ module Make_Layered (S : Layered_store) = struct
           | 1 ->
               let* c1 =
                 S.Commit.v repo ~info
-                  ~parents:[ S.Commit.id (List.nth commits 0) ]
+                  ~parents:[ S.Commit.key (List.nth commits 0) ]
                   tree'
               in
               setup (i + 1) tree' (commits @ [ c1 ]) contents
           | 2 ->
               let* c =
                 S.Commit.v repo ~info
-                  ~parents:[ S.Commit.id (List.nth commits 1) ]
+                  ~parents:[ S.Commit.key (List.nth commits 1) ]
                   tree'
               in
               S.Branch.set repo b c >>= fun () ->
@@ -756,7 +762,7 @@ module Make_Layered (S : Layered_store) = struct
           | 3 ->
               let* c =
                 S.Commit.v repo ~info
-                  ~parents:[ S.Commit.id (List.nth commits 1) ]
+                  ~parents:[ S.Commit.key (List.nth commits 1) ]
                   tree'
               in
               S.Branch.set repo b c >>= fun () ->
@@ -764,14 +770,14 @@ module Make_Layered (S : Layered_store) = struct
           | 4 ->
               let* c =
                 S.Commit.v repo ~info
-                  ~parents:[ S.Commit.id (List.nth commits 3) ]
+                  ~parents:[ S.Commit.key (List.nth commits 3) ]
                   tree'
               in
               setup (i + 1) tree (commits @ [ c ]) contents
           | 5 | 6 ->
               let* c =
                 S.Commit.v repo ~info
-                  ~parents:[ S.Commit.id (List.nth commits 3) ]
+                  ~parents:[ S.Commit.key (List.nth commits 3) ]
                   tree'
               in
               S.Branch.set repo b c >>= fun () ->
@@ -795,7 +801,7 @@ module Make_Layered (S : Layered_store) = struct
         Lwt_list.iter_p
           (fun i ->
             let+ t =
-              P.Commit.find (h repo) (S.Commit.id (List.nth commits i))
+              P.Commit.find (h repo) (S.Commit.key (List.nth commits i))
             in
             check_commit "deleted commit" None t)
           [ 0; 2; 4 ]
@@ -810,14 +816,14 @@ module Make_Layered (S : Layered_store) = struct
       check_branch repo "b6" (Some (List.nth commits 6)) c6';
       let* () =
         check_layer_id repo
-          (S.Commit_t (S.Commit.id (List.nth commits 1)))
+          (S.Commit_t (S.Commit.key (List.nth commits 1)))
           "layer id of c1" `Lower
       in
       let* () =
         Lwt_list.iter_p
           (fun i ->
             check_layer_id repo
-              (S.Commit_t (S.Commit.id (List.nth commits i)))
+              (S.Commit_t (S.Commit.key (List.nth commits i)))
               ("layer id of c" ^ string_of_int i)
               `Upper)
           [ 3; 5; 6 ]
@@ -938,7 +944,7 @@ module Make_Layered (S : Layered_store) = struct
       let find_commit c v () =
         let* commit =
           fail_with_none
-            (S.Commit.of_id repo (S.Commit.id c))
+            (S.Commit.of_key repo (S.Commit.key c))
             "no hash found in repo"
         in
         let tree = S.Commit.tree commit in
@@ -970,7 +976,7 @@ module Make_Layered (S : Layered_store) = struct
         let* c = S.Head.get t in
         let* commit =
           fail_with_none
-            (S.Commit.of_id repo (S.Commit.id c))
+            (S.Commit.of_key repo (S.Commit.key c))
             "no hash found in repo"
         in
         let tree = S.Commit.tree commit in
@@ -1025,7 +1031,7 @@ module Make_Layered (S : Layered_store) = struct
       let* c = S.Head.get t in
       let* commit =
         fail_with_none
-          (S.Commit.of_id repo (S.Commit.id c))
+          (S.Commit.of_key repo (S.Commit.key c))
           "no hash found in repo"
       in
       let tree = S.Commit.tree commit in

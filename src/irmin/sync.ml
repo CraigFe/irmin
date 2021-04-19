@@ -130,8 +130,8 @@ module Make (S : Store.S) = struct
             | Error _ as e -> Lwt.return e
             | Ok (Some c) -> (
                 Log.debug (fun l -> l "Fetched %a" pp_hash c);
-                let id = S.Private.Commit.Key.v c in
-                S.Commit.of_id (S.repo t) id >|= function
+                let key = S.Private.Commit.Key.v c in
+                S.Commit.of_key (S.repo t) key >|= function
                 | None -> Ok `Empty
                 | Some x -> Ok (`Head x))
             | Ok None -> (

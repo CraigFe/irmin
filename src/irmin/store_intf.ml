@@ -77,9 +77,9 @@ module type S = sig
   type ff_error = [ `No_change | `Rejected | lca_error ]
   (** The type for errors for {!fast_forward}. *)
 
-  type contents_id
-  type node_id
-  type commit_id
+  type contents_key
+  type node_key
+  type commit_key
 
   (** Repositories. *)
   module Repo : sig
@@ -128,9 +128,9 @@ module type S = sig
         modify branches. *)
 
     type elt =
-      [ `Commit of commit_id
-      | `Node of node_id
-      | `Contents of contents_id
+      [ `Commit of commit_key
+      | `Node of node_key
+      | `Contents of contents_key
       | `Branch of branch ]
     [@@deriving irmin]
     (** The type for elements iterated over by {!iter}. *)
@@ -141,17 +141,17 @@ module type S = sig
       max:elt list ->
       ?edge:(elt -> elt -> unit Lwt.t) ->
       ?branch:(branch -> unit Lwt.t) ->
-      ?commit:(commit_id -> unit Lwt.t) ->
-      ?node:(node_id -> unit Lwt.t) ->
-      ?contents:(contents_id -> unit Lwt.t) ->
+      ?commit:(commit_key -> unit Lwt.t) ->
+      ?node:(node_key -> unit Lwt.t) ->
+      ?contents:(contents_key -> unit Lwt.t) ->
       ?skip_branch:(branch -> bool Lwt.t) ->
-      ?skip_commit:(commit_id -> bool Lwt.t) ->
-      ?skip_node:(node_id -> bool Lwt.t) ->
-      ?skip_contents:(contents_id -> bool Lwt.t) ->
+      ?skip_commit:(commit_key -> bool Lwt.t) ->
+      ?skip_node:(node_key -> bool Lwt.t) ->
+      ?skip_contents:(contents_key -> bool Lwt.t) ->
       ?pred_branch:(t -> branch -> elt list Lwt.t) ->
-      ?pred_commit:(t -> commit_id -> elt list Lwt.t) ->
-      ?pred_node:(t -> node_id -> elt list Lwt.t) ->
-      ?pred_contents:(t -> contents_id -> elt list Lwt.t) ->
+      ?pred_commit:(t -> commit_key -> elt list Lwt.t) ->
+      ?pred_node:(t -> node_key -> elt list Lwt.t) ->
+      ?pred_contents:(t -> contents_key -> elt list Lwt.t) ->
       ?rev:bool ->
       t ->
       unit Lwt.t
@@ -309,7 +309,7 @@ module type S = sig
     (** [pp] is the pretty-printer for commit. Display only the hash. *)
 
     val v :
-      repo -> info:Info.t -> parents:commit_id list -> tree -> commit Lwt.t
+      repo -> info:Info.t -> parents:commit_key list -> tree -> commit Lwt.t
     (** [v r i ~parents:p t] is the commit [c] such that:
 
         - [info c = i]
@@ -319,7 +319,7 @@ module type S = sig
     val tree : commit -> tree
     (** [tree c] is [c]'s root tree. *)
 
-    val parents : commit -> commit_id list
+    val parents : commit -> commit_key list
     (** [parents c] are [c]'s parents. *)
 
     val info : commit -> Info.t
@@ -327,11 +327,11 @@ module type S = sig
 
     (** {1 Import/Export} *)
 
-    val id : commit -> commit_id
+    val key : commit -> commit_key
     (** [hash c] it [c]'s ID. *)
 
-    val of_id : repo -> commit_id -> commit option Lwt.t
-    (** [of_id r k] is the the commit object in [r] having [k] as ID, or [None]
+    val of_key : repo -> commit_key -> commit option Lwt.t
+    (** [of_key r k] is the the commit object in [r] having [k] as ID, or [None]
         is no such commit object exists. *)
   end
 
@@ -344,8 +344,8 @@ module type S = sig
     val hash : contents -> hash
     (** [hash c] it [c]'s hash. *)
 
-    val of_id : repo -> contents_id -> contents option Lwt.t
-    (** [of_id r k] is the the contents object in [r] having [k] as ID, or
+    val of_key : repo -> contents_key -> contents option Lwt.t
+    (** [of_key r k] is the the contents object in [r] having [k] as ID, or
         [None] is no such contents object exists. *)
   end
 
@@ -358,28 +358,29 @@ module type S = sig
          and type key := key
          and type metadata := metadata
          and type contents := contents
-         and type id := contents_id
+         and type contents_key := contents_key
          and type node := node
          and type hash := hash
 
     (** {1 Import/Export} *)
 
-    type kinded_id = [ `Contents of contents_id * metadata | `Node of node_id ]
+    type kinded_key =
+      [ `Contents of contents_key * metadata | `Node of node_key ]
     [@@deriving irmin]
     (** Hashes in the Irmin store are tagged with the type of the value they
         reference (either {!contents} or {!node}). In the [contents] case, the
         hash is paired with corresponding {!metadata}. *)
 
-    val id : tree -> kinded_id option
+    val key : tree -> kinded_key option
     (** [id r c] it [c]'s ID. *)
 
     val hash : tree -> hash
 
-    val of_id : Repo.t -> kinded_id -> tree option Lwt.t
-    (** [of_id r h] is the the tree object in [r] having [h] as key, or [None]
+    val of_key : Repo.t -> kinded_key -> tree option Lwt.t
+    (** [of_key r h] is the the tree object in [r] having [h] as key, or [None]
         is no such tree object exists. *)
 
-    val shallow : Repo.t -> kinded_id -> tree
+    val shallow : Repo.t -> kinded_key -> tree
     (** [shallow r h] is the shallow tree object with the key [h]. No check is
         performed to verify if [h] actually exists in [r]. *)
   end
@@ -416,9 +417,9 @@ module type S = sig
   val get_tree : t -> key -> tree Lwt.t
   (** [get_tree t k] is {!Tree.get_tree} applied to [t]'s root tree. *)
 
-  type kinded_id := [ `Contents of contents_id | `Node of node_id ]
+  type kinded_key := [ `Contents of contents_key | `Node of node_key ]
 
-  val id : t -> key -> kinded_id option Lwt.t
+  val key : t -> key -> kinded_key option Lwt.t
   (** [id t k] *)
 
   val hash : t -> key -> hash option Lwt.t
@@ -874,17 +875,17 @@ module type S = sig
   module Private : sig
     include
       Private.S
-        with type Contents.key = contents_id
+        with type Contents.key = contents_key
          and type Contents.value = contents
-         and type Node.key = node_id
+         and type Node.key = node_key
          and type Node.Metadata.t = metadata
-         and type Node.Val.node = node_id
-         and type Node.Val.contents = contents_id
-         and type Commit.key = commit_id
-         and type Commit.Val.node = node_id
-         and type Commit.Val.commit = commit_id
+         and type Node.Val.node = node_key
+         and type Node.Val.contents = contents_key
+         and type Commit.key = commit_key
+         and type Commit.Val.node = node_key
+         and type Commit.Val.commit = commit_key
          and type Branch.key = branch
-         and type Branch.value = commit_id
+         and type Branch.value = commit_key
          and type Slice.t = slice
          and type Repo.t = repo
          and module Hash = Hash
@@ -909,7 +910,7 @@ module type S = sig
       object [c]. *)
 
   val save_contents :
-    [> write ] Private.Contents.t -> contents -> contents_id Lwt.t
+    [> write ] Private.Contents.t -> contents -> contents_key Lwt.t
   (** Save a content into the database *)
 
   val save_tree :
@@ -918,7 +919,7 @@ module type S = sig
     [> write ] Private.Contents.t ->
     [> read_write ] Private.Node.t ->
     tree ->
-    kinded_id Lwt.t
+    kinded_key Lwt.t
   (** Save a tree into the database. Does not do any reads. If [clear] is set
       (it is by default), the tree cache will be cleared after the save. *)
 end
@@ -995,9 +996,9 @@ module type Sigs = sig
        and type slice = P.Slice.t
        and type step = P.Node.Path.step
        and type metadata = P.Node.Metadata.t
-       and type contents_id = P.Contents.key
-       and type node_id = P.Node.key
-       and type commit_id = P.Commit.key
+       and type contents_key = P.Contents.key
+       and type node_key = P.Node.key
+       and type commit_key = P.Commit.key
        and module Key = P.Node.Path
        and type repo = P.Repo.t
        and module Private = P

@@ -22,8 +22,8 @@ module Make (S : S) = struct
 
   let test_iter x () =
     let test repo =
-      let pp_id = Irmin.Type.pp S.Tree.kinded_id_t in
-      let eq_id = Irmin.Type.(unstage (equal S.Tree.kinded_id_t)) in
+      let pp_id = Irmin.Type.pp S.Tree.kinded_key_t in
+      let eq_id = Irmin.Type.(unstage (equal S.Tree.kinded_key_t)) in
       let mem k ls = List.exists (fun k' -> eq_id k k') ls in
       let visited = ref [] in
       let skipped = ref [] in
@@ -61,7 +61,7 @@ module Make (S : S) = struct
           (fun k ->
             if not (mem k !visited) then
               Alcotest.failf "%a should be visited"
-                (Irmin.Type.pp S.Tree.kinded_id_t)
+                (Irmin.Type.pp S.Tree.kinded_key_t)
                 k)
           nodes
       in

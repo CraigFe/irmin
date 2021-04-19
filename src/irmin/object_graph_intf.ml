@@ -115,14 +115,14 @@ module type Sigs = sig
 
   (** Build a graph. *)
   module Make
-      (Contents : Type.S)
-      (Node : Type.S)
-      (Commit : Type.S)
+      (Contents_key : Type.S)
+      (Node_key : Type.S)
+      (Commit_key : Type.S)
       (Branch : Type.S) :
     S
       with type V.t =
-            [ `Contents of Contents.t
-            | `Node of Node.t
-            | `Commit of Commit.t
+            [ `Contents of Contents_key.t
+            | `Node of Node_key.t
+            | `Commit of Commit_key.t
             | `Branch of Branch.t ]
 end
