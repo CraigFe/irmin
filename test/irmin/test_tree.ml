@@ -57,7 +57,7 @@ let c ?(info = Metadata.Default) blob = `Contents (blob, info)
 let invalid_tree () =
   let+ repo = Store.Repo.v (Irmin_mem.config ()) in
   let hash = Store.Hash.hash (fun f -> f "") in
-  Tree.shallow repo (`Node hash)
+  Tree.shallow repo (`Node (Obj.magic hash))
 
 let test_bindings _ () =
   let tree =
@@ -423,7 +423,7 @@ let test_fold_force _ () =
   let* invalid_tree =
     let+ repo = Store.Repo.v (Irmin_mem.config ()) in
     let hash = Store.Hash.hash (fun f -> f "") in
-    Tree.shallow repo (`Node hash)
+    Tree.shallow repo (`Node (Obj.magic (hash, None)))
   in
 
   (* Ensure that [fold] doesn't force a lazy tree when [~force:(`False f)],
@@ -493,7 +493,8 @@ let test_shallow _ () =
     let leaf = Tree.of_concrete (c "0") in
     let* shallow_leaf =
       let+ repo = Store.Repo.v (Irmin_mem.config ()) in
-      Tree.shallow repo (`Contents (Tree.hash leaf, Metadata.default))
+      Tree.shallow repo
+        (`Contents (Obj.magic (Tree.hash leaf, None), Metadata.default))
     in
     let* hash = compute_hash ~subtree:leaf in
     let+ hash_shallow = compute_hash ~subtree:shallow_leaf in
@@ -556,11 +557,15 @@ let test_is_empty _ () =
   in
   let* repo = Store.Repo.v (Irmin_mem.config ()) in
   let () =
-    let shallow_empty = Tree.(shallow repo (`Node (hash empty))) in
+    let shallow_empty =
+      Tree.(shallow repo (`Node (Obj.magic (hash empty, None))))
+    in
     Alcotest.(check bool) "shallow empty tree" true (is_empty shallow_empty)
   in
   let () =
-    let shallow_empty = Tree.(shallow repo (`Node (hash kv))) in
+    let shallow_empty =
+      Tree.(shallow repo (`Node (Obj.magic (hash kv, None))))
+    in
     Alcotest.(check bool)
       "shallow non-empty tree" false (is_empty shallow_empty)
   in
