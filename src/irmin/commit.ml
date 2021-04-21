@@ -27,11 +27,11 @@ module Make
     (N : Key.S with type hash = H.t)
     (C : Key.Poly with type hash = H.t) =
 struct
-  type node = N.t [@@deriving irmin]
+  type node_key = N.t [@@deriving irmin]
 
-  type commit = t C.t
+  type commit_key = t C.t
 
-  and t = { node : node; parents : commit list; info : Info.t }
+  and t = { node : node_key; parents : commit_key list; info : Info.t }
   [@@deriving irmin]
 
   let parents t = t.parents
@@ -68,7 +68,10 @@ module Store
     (S : Content_addressable.S)
     (H : Hash.S with type t = S.hash)
     (K : Key.S with type t = S.key and type hash = H.t)
-    (V : S with type node = N.key and type commit = S.key and type t = S.value) =
+    (V : S
+           with type node_key = N.key
+            and type commit_key = S.key
+            and type t = S.value) =
 struct
   module Node = N
   module Val = V
@@ -149,8 +152,8 @@ struct
 end
 
 module History (S : Store) = struct
-  type commit = S.Key.t [@@deriving irmin]
-  type node = S.Node.key
+  type commit_key = S.Key.t [@@deriving irmin]
+  type node_key = S.Node.key
   type 'a t = 'a S.t
   type v = S.Val.t
 
@@ -542,20 +545,20 @@ module V1 (C : S) = struct
   end
 
   module Node = K (struct
-    type t = C.node
+    type t = C.node_key
 
-    let t = C.node_t
+    let t = C.node_key_t
   end)
 
   module Commit = K (struct
-    type t = C.commit
+    type t = C.commit_key
 
-    let t = C.commit_t
+    let t = C.commit_key_t
   end)
 
-  type node = Node.t [@@deriving irmin]
-  type commit = Commit.t [@@deriving irmin]
-  type t = { parents : commit list; c : C.t }
+  type node_key = Node.t [@@deriving irmin]
+  type commit_key = Commit.t [@@deriving irmin]
+  type t = { parents : commit_key list; c : C.t }
 
   let import c = { c; parents = C.parents c }
   let export t = t.c

@@ -26,16 +26,16 @@ module type S = sig
   type metadata
   (** The type for node metadata. *)
 
-  type contents
+  type contents_key
   (** The type for contents keys. *)
 
-  type node
+  type node_key
   (** The type for node keys. *)
 
   type step
   (** The type for steps between nodes. *)
 
-  type value = [ `Node of node | `Contents of contents * metadata ]
+  type value = [ `Node of node_key | `Contents of contents_key * metadata ]
   (** The type for either (node) keys or (contents) keys combined with their
       metadata. *)
 
@@ -80,11 +80,11 @@ module type S = sig
   val metadata_t : metadata Type.t
   (** [metadata_t] is the value type for {!metadata}. *)
 
-  val contents_t : contents Type.t
-  (** [contents_t] is the value type for {!hash}. *)
+  val contents_key_t : contents_key Type.t
+  (** [%this] is the value type for {!hash}. *)
 
-  val node_t : node Type.t
-  (** [node_t] is the value type for {!hash}. *)
+  val node_key_t : node_key Type.t
+  (** [node_key_t] is the value type for {!hash}. *)
 
   val step_t : step Type.t
   (** [step_t] is the value type for {!step}. *)
@@ -118,8 +118,8 @@ module type Maker = sig
       S
         with type t := t
          and type metadata = M.t
-         and type contents = C.t
-         and type node = t N.t
+         and type contents_key = C.t
+         and type node_key = t N.t
          and type step = P.step
   end
 end
@@ -143,13 +143,13 @@ module type Store = sig
   module Val :
     S
       with type t = value
-       and type node = key
+       and type node_key = key
        and type metadata = Metadata.t
        and type step = Path.step
 
   module Hash : Hash.Typed with type t = hash and type value = value
 
-  module Contents : Contents.Store with type key = Val.contents
+  module Contents : Contents.Store with type key = Val.contents_key
   (** [Contents] is the underlying contents store. *)
 end
 
@@ -162,10 +162,10 @@ module type Graph = sig
   type metadata
   (** The type for node metadata. *)
 
-  type contents
+  type contents_key
   (** The type of user-defined contents. *)
 
-  type node
+  type node_key
   (** The type for node values. *)
 
   type step
@@ -174,30 +174,31 @@ module type Graph = sig
   type path
   (** The type of store paths. A path is composed of {{!step} steps}. *)
 
-  type value = [ `Node of node | `Contents of contents * metadata ]
+  type value = [ `Node of node_key | `Contents of contents_key * metadata ]
   (** The type for store values. *)
 
-  val empty : [> write ] t -> node Lwt.t
+  val empty : [> write ] t -> node_key Lwt.t
   (** The empty node. *)
 
-  val v : [> write ] t -> (step * value) list -> node Lwt.t
+  val v : [> write ] t -> (step * value) list -> node_key Lwt.t
   (** [v t n] is a new node containing [n]. *)
 
-  val list : [> read ] t -> node -> (step * value) list Lwt.t
+  val list : [> read ] t -> node_key -> (step * value) list Lwt.t
   (** [list t n] is the contents of the node [n]. *)
 
-  val find : [> read ] t -> node -> path -> value option Lwt.t
+  val find : [> read ] t -> node_key -> path -> value option Lwt.t
   (** [find t n p] is the contents of the path [p] starting form [n]. *)
 
-  val add : [> read_write ] t -> node -> path -> value -> node Lwt.t
+  val add : [> read_write ] t -> node_key -> path -> value -> node_key Lwt.t
   (** [add t n p v] is the node [x] such that [find t x p] is [Some v] and it
       behaves the same [n] for other operations. *)
 
-  val remove : [> read_write ] t -> node -> path -> node Lwt.t
+  val remove : [> read_write ] t -> node_key -> path -> node_key Lwt.t
   (** [remove t n path] is the node [x] such that [find t x] is [None] and it
       behhaves then same as [n] for other operations. *)
 
-  val closure : [> read ] t -> min:node list -> max:node list -> node list Lwt.t
+  val closure :
+    [> read ] t -> min:node_key list -> max:node_key list -> node_key list Lwt.t
   (** [closure t min max] is the unordered list of nodes [n] reachable from a
       node of [max] along a path which: (i) either contains no [min] or (ii) it
       ends with a [min].
@@ -206,13 +207,13 @@ module type Graph = sig
 
   val iter :
     [> read ] t ->
-    min:node list ->
-    max:node list ->
-    ?node:(node -> unit Lwt.t) ->
-    ?contents:(contents -> unit Lwt.t) ->
-    ?edge:(node -> node -> unit Lwt.t) ->
-    ?skip_node:(node -> bool Lwt.t) ->
-    ?skip_contents:(contents -> bool Lwt.t) ->
+    min:node_key list ->
+    max:node_key list ->
+    ?node:(node_key -> unit Lwt.t) ->
+    ?contents:(contents_key -> unit Lwt.t) ->
+    ?edge:(node_key -> node_key -> unit Lwt.t) ->
+    ?skip_node:(node_key -> bool Lwt.t) ->
+    ?skip_contents:(contents_key -> bool Lwt.t) ->
     ?rev:bool ->
     unit ->
     unit Lwt.t
@@ -234,11 +235,11 @@ module type Graph = sig
   val metadata_t : metadata Type.t
   (** [metadat_t] is the value type for {!metadata}. *)
 
-  val contents_t : contents Type.t
-  (** [contents_t] is the value type for {!contents}. *)
+  val contents_key_t : contents_key Type.t
+  (** [contents_key_t] is the value type for {!contents_key}. *)
 
-  val node_t : node Type.t
-  (** [node_t] is the value type for {!node}. *)
+  val node_key_t : node_key Type.t
+  (** [node_key_t] is the value type for {!node_key}. *)
 
   val step_t : step Type.t
   (** [step_t] is the value type for {!step}. *)
@@ -263,8 +264,8 @@ module type Sigs = sig
   module V1 (N : S with type step = string) : sig
     include
       S
-        with type contents = N.contents
-         and type node = N.node
+        with type contents_key = N.contents_key
+         and type node_key = N.node_key
          and type step = N.step
          and type metadata = N.metadata
 
@@ -281,7 +282,10 @@ module type Sigs = sig
       (S : Content_addressable.S)
       (H : Hash.S with type t = S.hash)
       (K : Key.S with type t = S.key and type hash = S.hash)
-      (V : S with type t = S.value and type contents = C.key and type node = K.t)
+      (V : S
+             with type t = S.value
+              and type contents_key = C.key
+              and type node_key = K.t)
       (M : Metadata.S with type t = V.metadata)
       (P : Path.S with type step = V.step) :
     Store
@@ -300,9 +304,9 @@ module type Sigs = sig
   module Graph (N : Store) :
     Graph
       with type 'a t = 'a N.t
-       and type contents = N.Contents.key
+       and type contents_key = N.Contents.key
+       and type node_key = N.key
        and type metadata = N.Metadata.t
-       and type node = N.key
        and type step = N.Path.step
        and type path = N.Path.t
 end

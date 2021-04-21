@@ -26,11 +26,11 @@ module type S = sig
 
   (** Private node store. *)
   module Node :
-    Node.Store with type hash = Hash.t and type Val.contents = Contents.key
+    Node.Store with type hash = Hash.t and type Val.contents_key = Contents.key
 
   (** Private commit store. *)
   module Commit :
-    Commit.Store with type hash = Hash.t and type Val.node = Node.key
+    Commit.Store with type hash = Hash.t and type Val.node_key = Node.key
 
   module Branch : Branch.Store with type value = Commit.key
   (** Private branch store. *)

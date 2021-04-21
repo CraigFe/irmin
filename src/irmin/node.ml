@@ -30,15 +30,19 @@ module Make
     end)
     (M : Metadata.S) =
 struct
-  type contents = C.t [@@deriving irmin]
+  type contents_key = C.t [@@deriving irmin]
   type step = P.step [@@deriving irmin]
   type metadata = M.t [@@deriving irmin]
   type hash = H.t [@@deriving irmin]
 
-  type contents_entry = { name : P.step; contents : contents }
+  type contents_entry = { name : P.step; contents : contents_key }
   [@@deriving irmin]
 
-  type contents_m_entry = { metadata : M.t; name : P.step; contents : contents }
+  type contents_m_entry = {
+    metadata : M.t;
+    name : P.step;
+    contents : contents_key;
+  }
   [@@deriving irmin]
 
   module StepMap = struct
@@ -63,8 +67,8 @@ struct
 
   and t = entry StepMap.t [@@deriving irmin]
 
-  type node = t N.t [@@deriving irmin]
-  type value = [ `Contents of contents * metadata | `Node of node ]
+  type node_key = t N.t [@@deriving irmin]
+  type value = [ `Contents of contents_key * metadata | `Node of node_key ]
 
   let equal_metadata = Type.(unstage (equal M.t))
 
@@ -74,9 +78,10 @@ struct
     variant "value" (fun n c x -> function
       | `Node h -> n h
       | `Contents (h, m) -> if equal_metadata m M.default then c h else x (h, m))
-    |~ case1 "node" node_t (fun k -> `Node k)
-    |~ case1 "contents" contents_t (fun h -> `Contents (h, M.default))
-    |~ case1 "contents-x" (pair contents_t M.t) (fun (h, m) -> `Contents (h, m))
+    |~ case1 "node" node_key_t (fun k -> `Node k)
+    |~ case1 "contents" contents_key_t (fun h -> `Contents (h, M.default))
+    |~ case1 "contents-x" (pair contents_key_t M.t) (fun (h, m) ->
+           `Contents (h, m))
     |> sealv
 
   let to_entry (k, (v : value)) =
@@ -167,7 +172,10 @@ module Store
     (S : Content_addressable.S)
     (H : Hash.S with type t = S.hash)
     (K : Key.S with type t = S.key and type hash = S.hash)
-    (V : S with type t = S.value and type contents = C.key and type node = S.key)
+    (V : S
+           with type t = S.value
+            and type contents_key = C.key
+            and type node_key = S.key)
     (M : Metadata.S with type t = V.metadata)
     (P : Path.S with type step = V.step) =
 struct
@@ -261,16 +269,16 @@ end
 
 module Graph (S : Store) = struct
   module Path = S.Path
-  module Contents = S.Contents.Key
+  module Contents_key = S.Contents.Key
   module Metadata = S.Metadata
 
   type step = Path.step [@@deriving irmin]
   type metadata = Metadata.t [@@deriving irmin]
-  type contents = Contents.t [@@deriving irmin]
-  type node = S.Key.t [@@deriving irmin]
+  type contents_key = Contents_key.t [@@deriving irmin]
+  type node_key = S.Key.t [@@deriving irmin]
   type path = Path.t [@@deriving irmin]
   type 'a t = 'a S.t
-  type value = [ `Contents of contents * metadata | `Node of node ]
+  type value = [ `Contents of contents_key * metadata | `Node of node_key ]
 
   let empty t = S.add t S.Val.empty
 
@@ -282,7 +290,7 @@ module Graph (S : Store) = struct
     type t = unit [@@deriving irmin]
   end
 
-  module Graph = Object_graph.Make (Contents) (S.Key) (U) (U)
+  module Graph = Object_graph.Make (Contents_key) (S.Key) (U) (U)
 
   let edges t =
     List.rev_map
@@ -433,21 +441,21 @@ module V1 (N : S with type step = string) = struct
     let t = Type.like H.t ~bin:(encode_bin, decode_bin, size_of)
   end
 
-  module Node = K (struct
-    type t = N.node
+  module Node_key = K (struct
+    type t = N.node_key
 
-    let t = N.node_t
+    let t = N.node_key_t
   end)
 
-  module Contents = K (struct
-    type t = N.contents
+  module Contents_key = K (struct
+    type t = N.contents_key
 
-    let t = N.contents_t
+    let t = N.contents_key_t
   end)
 
   type step = N.step
-  type node = Node.t [@@deriving irmin]
-  type contents = Contents.t [@@deriving irmin]
+  type node_key = Node_key.t [@@deriving irmin]
+  type contents_key = Contents_key.t [@@deriving irmin]
   type metadata = N.metadata [@@deriving irmin]
   type value = N.value
   type t = { n : N.t; entries : (step * value) list }
@@ -502,13 +510,15 @@ module V1 (N : S with type step = string) = struct
         | Some c, Some m, None -> `Contents (c, m)
         | None, None, Some n -> `Node n
         | _ -> failwith "invalid node")
-    |+ field "contents" (option Contents.t) (function
+    |+ field "contents" (option Contents_key.t) (function
          | `Contents (x, _) -> Some x
          | _ -> None)
     |+ field "metadata" (option metadata_t) (function
          | `Contents (_, x) when not (is_default x) -> Some x
          | _ -> None)
-    |+ field "node" (option Node.t) (function `Node n -> Some n | _ -> None)
+    |+ field "node" (option Node_key.t) (function
+         | `Node n -> Some n
+         | _ -> None)
     |> sealr
 
   let t : t Type.t =
