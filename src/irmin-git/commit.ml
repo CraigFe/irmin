@@ -18,7 +18,7 @@ open Import
 
 module Make (G : Git.S) = struct
   module Raw = Git.Value.Make (G.Hash)
-  module Key = Irmin.Hash.Make (G.Hash)
+  module Hash = Irmin.Hash.Make (G.Hash)
 
   module V = struct
     type t = G.Value.Commit.t
@@ -30,9 +30,13 @@ module Make (G : Git.S) = struct
 
   include Content_addressable.Check_closed (Content_addressable.Make (G) (V))
 
-  module Val = struct
+  module Val
+      (Key_node : Irmin.Key.S with type hash = G.Hash.t)
+      (Key_commit : Irmin.Key.Poly with type hash = G.Hash.t) =
+  struct
     type t = G.Value.Commit.t
-    type hash = Key.t [@@deriving irmin]
+    type node_key = Hash.t [@@deriving irmin]
+    type commit_key = Hash.t [@@deriving irmin]
 
     let info_of_git author message =
       let id = author.Git.User.name in
@@ -57,8 +61,8 @@ module Make (G : Git.S) = struct
       with Not_found -> (name, "irmin@openmirage.org")
 
     let of_git g =
-      let node = G.Value.Commit.tree g in
-      let parents = G.Value.Commit.parents g in
+      let node = G.Value.Commit.tree g |> Key_node.v in
+      let parents = G.Value.Commit.parents g |> List.map Key_commit.v in
       let author = G.Value.Commit.author g in
       let message = G.Value.Commit.message g in
       let message = Option.value ~default:"" message in
@@ -66,8 +70,11 @@ module Make (G : Git.S) = struct
       (info, node, parents)
 
     let to_git info node parents =
-      let tree = node in
-      let parents = List.fast_sort G.Hash.compare parents in
+      let tree = Key_node.hash node in
+      let parents =
+        parents |> List.map Key_commit.hash |> List.fast_sort G.Hash.compare
+      in
+
       let author =
         let date = Irmin.Info.date info in
         let name, email = name_email (Irmin.Info.author info) in
@@ -88,7 +95,7 @@ module Make (G : Git.S) = struct
       let message = Option.value ~default:"" (G.Value.Commit.message g) in
       info_of_git author message
 
-    module C = Irmin.Private.Commit.Make (Key)
+    module C = Irmin.Private.Commit.Make (Hash) (Key_node) (Key_commit)
 
     let of_c c = to_git (C.info c) (C.node c) (C.parents c)
 

@@ -40,7 +40,7 @@ type config = {
 module type Store = sig
   include Irmin.KV with type contents = bytes
 
-  type on_commit := int -> Hash.t -> unit Lwt.t
+  type on_commit := int -> commit_key -> unit Lwt.t
   type on_end := unit -> unit Lwt.t
   type pp := Format.formatter -> unit
 
@@ -295,6 +295,7 @@ module Trace_replay (Store : Store) = struct
       parents_trace
       |> List.map unscope
       |> List.map (Hashtbl.find t.hash_corresps)
+      |> List.map Key.v
     in
     List.iter (maybe_forget_hash t) parents_trace;
     let { tree } = Hashtbl.find t.contexts (unscope in_ctx_id) in
@@ -447,11 +448,12 @@ module Bench_suite (Store : Store) = struct
   let init_commit repo =
     Store.Commit.v repo ~info:(info ()) ~parents:[] Store.Tree.empty
 
+  module Key = Store.Private.Commit.Key
   module Trees = Generate_trees (Store)
   module Trace_replay = Trace_replay (Store)
 
   let checkout_and_commit repo prev_commit f =
-    Store.Commit.of_hash repo prev_commit >>= function
+    Store.Commit.of_key repo (Key.v prev_commit) >>= function
     | None -> Lwt.fail_with "commit not found"
     | Some commit ->
         let tree = Store.Commit.tree commit in

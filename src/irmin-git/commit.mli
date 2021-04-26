@@ -17,12 +17,20 @@
 (** Private module: turn a Git store into an Irmin backend for Git commits. *)
 
 module Make (G : Git.S) : sig
+  type hash := G.Hash.t
+
   include
     Irmin.Content_addressable.S
       with type _ t = bool ref * G.t
-       and type key = G.Hash.t
+       and type key = hash
        and type value = G.Value.Commit.t
 
-  module Key : Irmin.Hash.S with type t = key
-  module Val : Irmin.Private.Commit.S with type t = value and type hash = key
+  module Val : functor
+    (N : Irmin.Key.S with type hash = hash)
+    (C : Irmin.Key.Poly with type hash = hash)
+    ->
+    Irmin.Private.Commit.S
+      with type t := value
+       and type node_key := key
+       and type commit_key := key
 end
