@@ -217,7 +217,8 @@ let check_hardcoded_hash msg h v =
   | Ok hash -> check_hash msg hash (Inter.Val.hash v)
 
 (** Test add values from an empty node. *)
-let test_add_values () =
+let%test_lwt "add_values" =
+ fun () ->
   rm_dir root;
   let* t = Context.get_store () in
   check_node "hash empty node" Inode.Val.empty t >>= fun () ->
@@ -237,7 +238,8 @@ let integrity_check ?(stable = true) v =
       v
 
 (** Test add to inodes. *)
-let test_add_inodes () =
+let%test_lwt "add_inodes" =
+ fun () ->
   rm_dir root;
   let* t = Context.get_store () in
   let v1 = Inode.Val.v [ ("x", normal foo); ("y", normal bar) ] in
@@ -265,7 +267,8 @@ let test_add_inodes () =
   Context.close t
 
 (** Test remove values on an empty node. *)
-let test_remove_values () =
+let%test_lwt "remove_values" =
+ fun () ->
   rm_dir root;
   let* t = Context.get_store () in
   let v1 = Inode.Val.v [ ("x", normal foo); ("y", normal bar) ] in
@@ -282,7 +285,8 @@ let test_remove_values () =
   Context.close t
 
 (** Test remove and add values to go from stable to unstable inodes. *)
-let test_remove_inodes () =
+let%test_lwt "remove_inodes" =
+ fun () ->
   rm_dir root;
   let* t = Context.get_store () in
   let v1 =
@@ -328,7 +332,8 @@ let test_remove_inodes () =
 
     If a corrupted subtree is loaded through the [find] function when an inode
     lazily loads subtrees, this won't be caught here. *)
-let test_representation_uniqueness_maxdepth_3 () =
+let%test_lwt "representation_uniqueness_maxdepth_3" =
+ fun () ->
   let module P = Inode_permutations_generator in
   let p = P.v ~entries:Conf.entries ~maxdepth_of_test:3 in
   let f steps tree s =
@@ -357,7 +362,8 @@ let test_representation_uniqueness_maxdepth_3 () =
     (P.trees p);
   Lwt.return_unit
 
-let test_truncated_inodes () =
+let%test_lwt "truncated_inodes" =
+ fun () ->
   let to_truncated inode =
     let encode, decode =
       let t = Inode.Val.t in
@@ -420,7 +426,8 @@ let test_truncated_inodes () =
   (iter_steps_with_failure @@ fun step -> Inode.Val.remove v3 step);
   Lwt.return_unit
 
-let test_intermediate_inode_as_root () =
+let%test_lwt "intermediate_inode_as_root" =
+ fun () ->
   rm_dir root;
   let* t = Context.get_store () in
   let s000, s001, s010 =
@@ -476,7 +483,8 @@ let test_intermediate_inode_as_root () =
   in
   Lwt.return_unit
 
-let test_concrete_inodes () =
+let%test_lwt "concrete_inodes" =
+ fun () ->
   rm_dir root;
   let* t = Context.get_store () in
   let pp_concrete = Irmin.Type.pp_json ~minify:false Inter.Val.Concrete.t in
@@ -508,23 +516,3 @@ let test_concrete_inodes () =
   in
   check v;
   Context.close t
-
-let tests =
-  [
-    Alcotest.test_case "add values" `Quick (fun () ->
-        Lwt_main.run (test_add_values ()));
-    Alcotest.test_case "add values to inodes" `Quick (fun () ->
-        Lwt_main.run (test_add_inodes ()));
-    Alcotest.test_case "remove values" `Quick (fun () ->
-        Lwt_main.run (test_remove_values ()));
-    Alcotest.test_case "remove inodes" `Quick (fun () ->
-        Lwt_main.run (test_remove_inodes ()));
-    Alcotest.test_case "test concrete inodes" `Quick (fun () ->
-        Lwt_main.run (test_concrete_inodes ()));
-    Alcotest.test_case "test representation uniqueness" `Quick (fun () ->
-        Lwt_main.run (test_representation_uniqueness_maxdepth_3 ()));
-    Alcotest.test_case "test truncated inodes" `Quick (fun () ->
-        Lwt_main.run (test_truncated_inodes ()));
-    Alcotest.test_case "test intermediate inode as root" `Quick (fun () ->
-        Lwt_main.run (test_intermediate_inode_as_root ()));
-  ]

@@ -51,7 +51,8 @@ let config ?(readonly = false) ?(fresh = true) root =
 
 let info () = S.Info.empty
 
-let open_ro_after_rw_closed () =
+let%test_lwt "open_ro_after_rw_closed" =
+ fun () ->
   rm_dir root;
   let* rw = S.Repo.v (config ~readonly:false ~fresh:true root) in
   let* t = S.master rw in
@@ -88,7 +89,8 @@ let check_binding ?msg repo commit key value =
       let+ x = S.Tree.find tree key in
       Alcotest.(check (option string)) msg (Some value) x
 
-let ro_sync_after_add () =
+let%test_lwt "ro_sync_after_add" =
+ fun () ->
   let check ro c k v =
     S.Commit.of_hash ro (S.Commit.hash c) >>= function
     | None -> Alcotest.failf "commit not found"
@@ -116,7 +118,8 @@ let ro_sync_after_add () =
   check ro c2 "a" "y" >>= fun () ->
   S.Repo.close ro >>= fun () -> S.Repo.close rw
 
-let ro_sync_after_close () =
+let%test_lwt "ro_sync_after_close" =
+ fun () ->
   let binding f = f [ "a" ] "x" in
   rm_dir root;
   let* rw = S.Repo.v (config ~readonly:false ~fresh:true root) in
@@ -140,7 +143,8 @@ let clear_all repo =
     ]
 
 (** Open RO after RW was cleared. *)
-let clear_rw_open_ro () =
+let%test_lwt "clear_rw_open_ro" =
+ fun () ->
   rm_dir root;
   let* rw = S.Repo.v (config ~readonly:false ~fresh:true root) in
   let* tree = S.Tree.add S.Tree.empty [ "a" ] "x" in
@@ -151,7 +155,8 @@ let clear_rw_open_ro () =
   S.Repo.close rw >>= fun () -> S.Repo.close ro
 
 (** RO looks for values before and after sync but after RW was cleared. *)
-let clear_rw_find_ro () =
+let%test_lwt "clear_rw_find_ro" =
+ fun () ->
   rm_dir root;
   let* rw = S.Repo.v (config ~readonly:false ~fresh:true root) in
   let* ro = S.Repo.v (config ~readonly:true ~fresh:false root) in
@@ -173,7 +178,8 @@ let clear_rw_find_ro () =
   check_commit_absent ro c1 >>= fun () ->
   S.Repo.close rw >>= fun () -> S.Repo.close ro
 
-let clear_rw_twice () =
+let%test_lwt "clear_rw_twice" =
+ fun () ->
   rm_dir root;
   let* rw = S.Repo.v (config ~readonly:false ~fresh:true root) in
   let* t = S.master rw in
@@ -198,7 +204,8 @@ let clear_rw_twice () =
   clear_all rw >>= fun () ->
   check_empty () >>= fun () -> S.Repo.close rw
 
-let dict_sync_after_clear_same_offset () =
+let%test_lwt "dict_sync_after_clear_same_offset" =
+ fun () ->
   rm_dir root;
   let* rw = S.Repo.v (config ~readonly:false ~fresh:true root) in
   let* ro = S.Repo.v (config ~readonly:true ~fresh:false root) in
@@ -224,17 +231,3 @@ let dict_sync_after_clear_same_offset () =
   S.sync ro;
   find_key h long_string "y" >>= fun () ->
   S.Repo.close rw >>= fun () -> S.Repo.close ro
-
-let tests =
-  let tc name test =
-    Alcotest.test_case name `Quick (fun () -> Lwt_main.run (test ()))
-  in
-  [
-    tc "Test open ro after rw closed" open_ro_after_rw_closed;
-    tc "Open ro after rw cleared" clear_rw_open_ro;
-    tc "Clear rw twice" clear_rw_twice;
-    tc "Find in ro after rw cleared" clear_rw_find_ro;
-    tc "Test ro sync after add" ro_sync_after_add;
-    tc "Test ro sync after close" ro_sync_after_close;
-    tc "RO sync dict after clear, same offset" dict_sync_after_clear_same_offset;
-  ]

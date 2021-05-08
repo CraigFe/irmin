@@ -61,7 +61,7 @@ let config ?(readonly = false) ?(fresh = true) ?(lower_root = Conf.lower_root)
   let conf = Irmin_pack.config ~readonly ?index_log_size ~fresh root in
   Irmin_pack_layered.config ~conf ~lower_root ~upper_root0 ~with_lower ()
 
-module Test = struct
+module%test_lwt Test = struct
   type index = { root : string; repo : Store.Repo.t }
 
   and context = {
@@ -243,7 +243,8 @@ module Test = struct
     | Some commit -> check_block ctxt.index.repo commit
 
   (** Check that freeze preserves and deletes commits accordingly. *)
-  let test_simple_freeze () =
+  let%test_lwt "simple_freeze" =
+   fun () ->
     let* ctxt = init () in
     let* ctxt, block1 = commit_block1 ctxt in
     let* ctxt, block1a = checkout_and_commit ctxt block1 commit_block1a in
@@ -257,7 +258,8 @@ module Test = struct
 
   (** Check that freeze and close work together; check that the right upper is
       used after freeze and after closing and reopening the store. *)
-  let test_close_freeze () =
+  let%test_lwt "close_freeze" =
+   fun () ->
     let check_upper msg expected repo =
       let x = Store.Private_layer.upper_in_use repo in
       if expected <> x then Alcotest.fail msg
@@ -285,7 +287,8 @@ module Test = struct
     Store.Repo.close ctxt.index.repo
 
   (** Check that freeze preserves and deletes commits from RO. *)
-  let test_ro_simple () =
+  let%test_lwt "ro_simple" =
+   fun () ->
     let* ctxt = init () in
     let* ro_ctxt = clone ~readonly:true ctxt.index.root in
     let* ctxt, block1 = commit_block1 ctxt in
@@ -318,7 +321,8 @@ module Test = struct
 
   (** When RO calls sync the value is in upper1, but when RO calls find the
       value moved to lower. *)
-  let test_ro_sync_after_two_freezes () =
+  let%test_lwt "ro_sync_after_two_freezes" =
+   fun () ->
     let* ctxt = init () in
     let* ro_ctxt = clone ~readonly:true ctxt.index.root in
     let* ctxt, block1 = commit_block1 ctxt in
@@ -333,7 +337,8 @@ module Test = struct
     Store.Repo.close ro_ctxt.index.repo
 
   (** Check opening RO store and calling sync right after. *)
-  let test_ro_sync_after_v () =
+  let%test_lwt "ro_sync_after_v" =
+   fun () ->
     let* ctxt = init () in
     let* ctxt, block1 = commit_block1 ctxt in
     let* ro_ctxt = clone ~readonly:true ctxt.index.root in
@@ -343,7 +348,8 @@ module Test = struct
     Store.Repo.close ro_ctxt.index.repo
 
   (** Delete lower or the upper not in use and add, find and freeze. *)
-  let test_delete_stores () =
+  let%test_lwt "delete_stores" =
+   fun () ->
     let rm_store_from_disk store_name root =
       let name = Filename.concat store_name root in
       let cmd = Printf.sprintf "rm -rf %s" name in
@@ -376,7 +382,8 @@ module Test = struct
     Store.Repo.close ctxt.index.repo
 
   (** Open layered store, close it and open only the lower layer. *)
-  let test_open_lower () =
+  let%test_lwt "open_lower" =
+   fun () ->
     let* ctxt = init () in
     let* ctxt, block1 = commit_block1 ctxt in
     let* ctxt = freeze ctxt block1 in
@@ -400,7 +407,8 @@ module Test = struct
     StoreSimple.Repo.close repo
 
   (** Open upper1 as simple store, close it and then open it as layered store. *)
-  let test_upper1_reopen () =
+  let%test_lwt "upper1_reopen" =
+   fun () ->
     let store_name = fresh_name () in
     Common.rm_dir store_name;
     let* repo =
@@ -415,7 +423,8 @@ module Test = struct
     Store.Repo.close ctxt.index.repo
 
   (** Open lower as simple store, close it and then open it as layered store. *)
-  let test_lower_reopen () =
+  let%test_lwt "lower_reopen" =
+   fun () ->
     let store_name = fresh_name () in
     Common.rm_dir store_name;
     let* repo =
@@ -430,7 +439,8 @@ module Test = struct
     Store.Repo.close ctxt.index.repo
 
   (** Test the without lower option for both RW and RO instances. *)
-  let test_without_lower () =
+  let%test_lwt "without_lower" =
+   fun () ->
     let* ctxt = init ~with_lower:false () in
     let* ro_ctxt = clone ~readonly:true ~with_lower:false ctxt.index.root in
     let* ctxt, block1 = commit_block1 ctxt in
@@ -464,7 +474,8 @@ module Test = struct
         \- 1c
       and keep in upper 1a - 2a - 3a
                           \- 1c *)
-  let test_without_lower_min_upper () =
+  let%test_lwt "without_lower_min_upper" =
+   fun () ->
     let* ctxt = init ~with_lower:false () in
     let* ctxt, block1 = commit_block1 ctxt in
     let* ctxt, block1a = checkout_and_commit ctxt block1 commit_block1a in
@@ -486,7 +497,8 @@ module Test = struct
 
   (** Open layered store without lower, close it and open it with the lower
       layer. *)
-  let test_reopen_with_lower () =
+  let%test_lwt "reopen_with_lower" =
+   fun () ->
     let* ctxt = init ~with_lower:false () in
     let* ctxt, block1 = commit_block1 ctxt in
     let* ctxt = freeze ctxt block1 in
@@ -511,7 +523,8 @@ module Test = struct
 
   (** the upper is self contained for 3a and 1c; the store is reopened without
       lower and the commits are checked. *)
-  let test_self_contained () =
+  let%test_lwt "self_contained" =
+   fun () ->
     let* ctxt = init () in
     let* ctxt, block1 = commit_block1 ctxt in
     let* ctxt, block1a = checkout_and_commit ctxt block1 commit_block1a in
@@ -541,7 +554,8 @@ module Test = struct
       | `After_Clear -> after ()
       | _ -> Lwt.return_unit)
 
-  let test_ro_find_during_freeze () =
+  let%test_lwt "ro_find_during_freeze" =
+   fun _ ->
     let* ctxt = init () in
     let* ro_ctxt = clone ~readonly:true ctxt.index.root in
     let* ctxt, block1 = commit_block1 ctxt in
@@ -562,7 +576,8 @@ module Test = struct
     Store.Repo.close ctxt.index.repo >>= fun () ->
     Store.Repo.close ro_ctxt.index.repo
 
-  let test_ro_checks_async_freeze () =
+  let%test_lwt "ro_checks_async_freeze" =
+   fun _ ->
     let* ctxt = init () in
     let* ro_ctxt = clone ~readonly:true ctxt.index.root in
     let* ctxt, block1 = commit_block1 ctxt in
@@ -581,40 +596,4 @@ module Test = struct
       Alcotest.fail "Readonly sees a freeze that finished";
     Store.Repo.close ctxt.index.repo >>= fun () ->
     Store.Repo.close ro_ctxt.index.repo
-
-  let tests =
-    [
-      Alcotest.test_case "Test simple freeze" `Quick (fun () ->
-          Lwt_main.run (test_simple_freeze ()));
-      Alcotest.test_case "Test close and reopen a store" `Quick (fun () ->
-          Lwt_main.run (test_close_freeze ()));
-      Alcotest.test_case "Test ro instances" `Quick (fun () ->
-          Lwt_main.run (test_ro_simple ()));
-      Alcotest.test_case "Test ro after two freezes" `Quick (fun () ->
-          Lwt_main.run (test_ro_sync_after_two_freezes ()));
-      Alcotest.test_case "Test ro sync after v" `Quick (fun () ->
-          Lwt_main.run (test_ro_sync_after_v ()));
-      Alcotest.test_case "Delete lower and previous upper" `Quick (fun () ->
-          Lwt_main.run (test_delete_stores ()));
-      Alcotest.test_case "Open upper as simple store, then as layered" `Quick
-        (fun () -> Lwt_main.run (test_upper1_reopen ()));
-      Alcotest.test_case "Test open lower" `Quick (fun () ->
-          Lwt_main.run (test_open_lower ()));
-      Alcotest.test_case "Open lower as simple store, then as layered" `Quick
-        (fun () -> Lwt_main.run (test_lower_reopen ()));
-      Alcotest.test_case "Test without lower" `Quick (fun () ->
-          Lwt_main.run (test_without_lower ()));
-      Alcotest.test_case "Test without lower, min_upper" `Quick (fun () ->
-          Lwt_main.run (test_without_lower_min_upper ()));
-      Alcotest.test_case "Test reopen with lower" `Quick (fun () ->
-          Lwt_main.run (test_reopen_with_lower ()));
-      Alcotest.test_case "Test ro find during freeze" `Quick (fun () ->
-          Lwt_main.run (test_ro_find_during_freeze ()));
-      Alcotest.test_case "Test self contained upper" `Quick (fun () ->
-          Lwt_main.run (test_self_contained ()));
-      Alcotest.test_case "Test ro async freeze" `Quick (fun () ->
-          Lwt_main.run (test_ro_checks_async_freeze ()));
-    ]
 end
-
-let tests = Test.tests

@@ -15,4 +15,4 @@
  *)
 
 val suite : Irmin_test.t
-val misc : (string * unit Alcotest.test_case list) list
+val _ppx_alcotest_suite : unit Alcotest_lwt.Unstable.test list

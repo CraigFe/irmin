@@ -92,8 +92,8 @@ module Context = Make_context (struct
   let root = test_dir
 end)
 
-module Dict = struct
-  let test_dict () =
+module%test Dict = struct
+  let%test "dict" =
     let Context.{ dict; clone } = Context.get_dict () in
     let x1 = Dict.index dict "foo" in
     Alcotest.(check (option int)) "foo" (Some 0) x1;
@@ -125,7 +125,7 @@ module Dict = struct
 
   let ignore_int (_ : int option) = ()
 
-  let test_readonly_dict () =
+  let%test "readonly_dict" =
     let Context.{ dict; clone } = Context.get_dict () in
     let r = clone ~readonly:true in
     let check_index k i =
@@ -165,7 +165,7 @@ module Dict = struct
     Dict.close dict;
     Dict.close r
 
-  let test_clear () =
+  let%test "clear" =
     let Context.{ dict; _ } = Context.get_dict () in
     ignore_int (Dict.index dict "foo");
     Dict.flush dict;
@@ -177,7 +177,7 @@ module Dict = struct
 
   (** Readonly can read old values, after a RW clear but before a sync. Set
       ~force_refill:true for the first sync after a clear. *)
-  let readonly_find_old () =
+  let%test "readonly_find_old" =
     let Context.{ dict; clone } = Context.get_dict () in
     let r = clone ~readonly:true in
     let check_find msg k i =
@@ -197,7 +197,7 @@ module Dict = struct
 
   (** Readonly can read old values, after RW clear and add, but before sync. Set
       ~force_refill:true for the first sync after a clear. *)
-  let readonly_find_old_after_rewrite () =
+  let%test "readonly_find_old_after_rewrite" =
     let Context.{ dict; clone } = Context.get_dict () in
     let r = clone ~readonly:true in
     let check_find msg k i =
@@ -216,21 +216,11 @@ module Dict = struct
     check_find "find new values after sync" (Some "bar") 0;
     Dict.close dict;
     Dict.close r
-
-  let tests =
-    [
-      Alcotest.test_case "dict" `Quick test_dict;
-      Alcotest.test_case "RO dict" `Quick test_readonly_dict;
-      Alcotest.test_case "clear" `Quick test_clear;
-      Alcotest.test_case "RO find old values after clear" `Quick
-        readonly_find_old;
-      Alcotest.test_case "RO find old values after clear and add" `Quick
-        readonly_find_old_after_rewrite;
-    ]
 end
 
-module Pack = struct
-  let test_pack () =
+module%test_lwt Pack = struct
+  let%test_lwt "pack" =
+   fun _ ->
     let* t = Context.get_pack () in
     let x1 = "foo" in
     let x2 = "bar" in
@@ -262,7 +252,8 @@ module Pack = struct
     test pack2 >>= fun () ->
     Context.close t.index t.pack >>= fun () -> Pack.close pack2
 
-  let test_readonly_pack () =
+  let%test_lwt "readonly_pack" =
+   fun _ ->
     let* t = Context.get_pack () in
     let* i, r = t.clone_index_pack ~readonly:true in
     let test w =
@@ -299,7 +290,8 @@ module Pack = struct
     test t.pack >>= fun () ->
     Context.close t.index t.pack >>= fun () -> Context.close i r
 
-  let test_reuse_index () =
+  let%test_lwt "reuse_index" =
+   fun _ ->
     (* index and pack with different names. However, this behaviour is not exposed by irmin_pack.*)
     let index = Index.v ~log_size:4 ~fresh:true (Context.fresh_name "index") in
     let* w1 = Pack.v ~fresh:true ~index (Context.fresh_name "pack") in
@@ -311,7 +303,8 @@ module Pack = struct
     Index.close index;
     Pack.close w1
 
-  let test_close_pack_more () =
+  let%test_lwt "close_pack_more" =
+   fun _ ->
     (*open and close in rw*)
     let* t = Context.get_pack () in
     let w = t.pack in
@@ -337,7 +330,8 @@ module Pack = struct
     Alcotest.(check string) "x1.3" x1 y1;
     Context.close i2 w2 >>= fun () -> Context.close i3 w3
 
-  let test_close_pack () =
+  let%test_lwt "close_pack" =
+   fun _ ->
     let* t = Context.get_pack () in
     let w = t.pack in
     let x1 = "foo" in
@@ -389,7 +383,8 @@ module Pack = struct
   (** Index can be flushed to disk independently of pack, we simulate this in
       the tests using [Index.filter] and [Index.flush]. Regression test for PR
       1008 in which values were indexed before being reachable in pack. *)
-  let readonly_sync_index_flush () =
+  let%test_lwt "readonly_sync_index_flush" =
+   fun _ ->
     let* t = Context.get_pack () in
     let* i, r = t.clone_index_pack ~readonly:true in
     let test w =
@@ -413,7 +408,8 @@ module Pack = struct
     test t.pack >>= fun () ->
     Context.close t.index t.pack >>= fun () -> Context.close i r
 
-  let readonly_find_index_flush () =
+  let%test_lwt "readonly_find_index_flush" =
+   fun _ ->
     let* t = Context.get_pack () in
     let* i, r = t.clone_index_pack ~readonly:true in
     let check h x msg =
@@ -447,7 +443,8 @@ module Pack = struct
     test t.pack >>= fun () ->
     Context.close t.index t.pack >>= fun () -> Context.close i r
 
-  let test_clear () =
+  let%test_lwt "clear" =
+   fun _ ->
     let* t = Context.get_pack ~lru_size:10 () in
     let v = "foo" in
     let k = sha1 v in
@@ -464,7 +461,8 @@ module Pack = struct
       values can be either in the log or in the data file. [persist] calls
       [Index.flush] to the test for old values in log; it calls [Index.filter]
       to force a merge, to add the values in the data file. *)
-  let readonly_find_old () =
+  let%test_lwt "readonly_find_old" =
+   fun _ ->
     let* t = Context.get_pack () in
     let* i, r = t.clone_index_pack ~readonly:true in
     let check h x msg =
@@ -497,7 +495,8 @@ module Pack = struct
 
   (** Similar to the test above, but the read-write pack adds new values after a
       clear, and before a readonly sync. *)
-  let readonly_find_old_after_rewrite () =
+  let%test_lwt "readonly_find_old_after_rewrite" =
+   fun _ ->
     let* t = Context.get_pack () in
     let* i, r = t.clone_index_pack ~readonly:true in
     let check h x msg =
@@ -534,31 +533,9 @@ module Pack = struct
         "data"
     in
     Context.close t.index t.pack >>= fun () -> Context.close i r
-
-  let tests =
-    [
-      Alcotest.test_case "pack" `Quick (fun () -> Lwt_main.run (test_pack ()));
-      Alcotest.test_case "RO pack" `Quick (fun () ->
-          Lwt_main.run (test_readonly_pack ()));
-      Alcotest.test_case "index" `Quick (fun () ->
-          Lwt_main.run (test_reuse_index ()));
-      Alcotest.test_case "close" `Quick (fun () ->
-          Lwt_main.run (test_close_pack ()));
-      Alcotest.test_case "close readonly" `Quick (fun () ->
-          Lwt_main.run (test_close_pack_more ()));
-      Alcotest.test_case "readonly sync, index flush" `Quick (fun () ->
-          Lwt_main.run (readonly_sync_index_flush ()));
-      Alcotest.test_case "readonly find, index flush" `Quick (fun () ->
-          Lwt_main.run (readonly_find_index_flush ()));
-      Alcotest.test_case "clear" `Quick (fun () -> Lwt_main.run (test_clear ()));
-      Alcotest.test_case "readonly find old values after clear" `Quick
-        (fun () -> Lwt_main.run (readonly_find_old ()));
-      Alcotest.test_case "readonly find old values after clear and add" `Quick
-        (fun () -> Lwt_main.run (readonly_find_old_after_rewrite ()));
-    ]
 end
 
-module Branch = struct
+module%test_lwt Branch = struct
   module V2 = struct
     let version = `V2
   end
@@ -571,7 +548,8 @@ module Branch = struct
   let hash =
     Alcotest.testable pp_hash Irmin.Type.(unstage (equal Irmin.Hash.SHA1.t))
 
-  let test_branch () =
+  let%test_lwt "branch" =
+   fun () ->
     let branches = [ "foo"; "bar/toto"; "titi" ] in
     let test t =
       Lwt_list.iter_s (fun k -> Branch.set t k (sha1 k)) branches >>= fun () ->
@@ -605,7 +583,8 @@ module Branch = struct
       br;
     Lwt.return_unit
 
-  let test_close_branch () =
+  let%test_lwt "close_branch" =
+   fun () ->
     let branches = [ "foo"; "bar/toto"; "titi" ] in
     let add t =
       Lwt_list.iter_s
@@ -634,23 +613,9 @@ module Branch = struct
     let* t2 = Branch.v ~fresh:false name in
     add t1 >>= fun () ->
     Branch.close t1 >>= fun () -> test t2
-
-  let tests =
-    [
-      Alcotest.test_case "branch" `Quick (fun () ->
-          Lwt_main.run (test_branch ()));
-      Alcotest.test_case "branch close" `Quick (fun () ->
-          Lwt_main.run (test_close_branch ()));
-    ]
 end
 
-let misc =
-  [
-    ("dict-files", Dict.tests);
-    ("pack-files", Pack.tests);
-    ("branch-files", Branch.tests);
-    ("instances", Multiple_instances.tests);
-    ("existing stores", Test_existing_stores.tests);
-    ("layers", Layered.tests);
-    ("inodes", Test_inode.tests);
-  ]
+module%test Existing_stores = Test_existing_stores
+module%test_lwt Multiple_instances = Multiple_instances
+module%test Layered = Layered
+module%test Inode = Test_inode

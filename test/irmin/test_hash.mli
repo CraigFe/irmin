@@ -14,4 +14,4 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-val suite : unit Alcotest_lwt.test_case list
+val _ppx_alcotest_suite : unit Alcotest_lwt.Unstable.test list

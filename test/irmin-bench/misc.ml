@@ -16,7 +16,7 @@
 
 open! Import
 
-let snap_around_42 () =
+let%test "snap_around_42" =
   let f ~sd =
     Irmin_traces.Trace_stat_summary_utils.snap_to_integer ~significant_digits:sd
   in
@@ -37,9 +37,3 @@ let snap_around_42 () =
   Alcotest.(check (float 0.)) "Snap" (f ~sd:4 42.00001000) 42.;
   Alcotest.(check (float 0.)) "Snap" (f ~sd:4 42.00000999) 42.;
   Alcotest.(check (float 0.)) "Already integer" (f ~sd:4 42.) 42.
-
-let test_cases =
-  [
-    ( "snap_to_integer",
-      [ Alcotest.test_case "snap_around_42" `Quick snap_around_42 ] );
-  ]

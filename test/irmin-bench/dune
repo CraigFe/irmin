@@ -1,5 +1,6 @@
 (executable
  (name test)
+ (preprocess (pps ppx_alcotest))
  (libraries alcotest irmin_traces))
 
 (rule

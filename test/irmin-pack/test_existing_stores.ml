@@ -182,7 +182,7 @@ module V2 () =
     (Irmin.Branch.String)
     (Hash)
 
-module Test_store = struct
+module%test Store = struct
   module S = V2 ()
   include Test (S) (Config_store)
 
@@ -201,11 +201,13 @@ module Test_store = struct
     check_repo ro archive >>= fun () ->
     check_commit ro new_commit [ ([ "c" ], "x") ] >>= fun () -> S.Repo.close ro
 
-  let v1_to_v2 =
+  let%test_lwt "v1_to_v2" =
+   fun () ->
     v1_to_v2 ~uncached_instance_check_idempotent ~uncached_instance_check_commit
+      ()
 end
 
-module Test_reconstruct = struct
+module%test Test_reconstruct = struct
   module S = V2 ()
   include Test (S) (Config_store)
 
@@ -225,7 +227,8 @@ module Test_reconstruct = struct
            non-zero exit code %d"
           cmd n
 
-  let test_reconstruct () =
+  let%test_lwt "reconstruct" =
+   fun () ->
     setup_test_env ();
     let conf = config ~readonly:false ~fresh:false Config_store.root_v1 in
     S.migrate conf;
@@ -270,7 +273,7 @@ module Config_layered_store = struct
       v "_build" / "test_layers_migrate_1_to_2" / "upper0" |> to_string,
       v "_build" / "test_layers_migrate_1_to_2" / "lower" |> to_string )
 
-  let setup_test_env () =
+  let _setup_test_env () =
     goto_project_root ();
     rm_dir root_v1;
     let cmd = Filename.quote_command "mkdir" [ root_v1 ] in
@@ -295,9 +298,9 @@ module Make_layered =
     (Irmin.Branch.String)
     (Hash)
 
-module Test_layered_store = Test (Make_layered) (Config_layered_store)
+(* module%test Layered_store = Test (Make_layered) (Config_layered_store) *)
 
-module Test_corrupted_stores = struct
+module%test_lwt Corrupted_stores = struct
   let root_archive, root, root_layers, upper1, upper0, lower =
     let open Fpath in
     ( v "test" / "irmin-pack" / "data" / "corrupted" |> to_string,
@@ -324,7 +327,8 @@ module Test_corrupted_stores = struct
     copy_root_archive upper0;
     copy_root_archive lower
 
-  let test () =
+  let%test_lwt "test" =
+   fun () ->
     setup_test_env ();
     let module S = V2 () in
     let* rw = S.Repo.v (config ~fresh:false root) in
@@ -342,7 +346,8 @@ module Test_corrupted_stores = struct
     | _ -> Alcotest.fail "Store is repaired, should return Ok");
     S.Repo.close rw
 
-  let test_layered_store () =
+  let%test_lwt "layered_store" =
+   fun () ->
     setup_test_env_layered_store ();
     let module S = Make_layered in
     let* rw = S.Repo.v (config ~fresh:false root_layers) in
@@ -380,7 +385,8 @@ module Test_corrupted_stores = struct
     let cmd = Filename.quote_command "touch" [ lock_file ] in
     exec_cmd cmd
 
-  let test_freeze_lock () =
+  let%test_lwt "freeze_lock" =
+   fun () ->
     setup_test ();
     let module S = Make_layered in
     let add_commit repo k v =
@@ -445,7 +451,7 @@ module Test_corrupted_stores = struct
     S.Repo.close rw >>= fun () -> S.Repo.close ro
 end
 
-module Test_corrupted_inode = struct
+module%test Corrupted_inode = struct
   let root_archive, root =
     let open Fpath in
     ( v "test" / "irmin-pack" / "data" / "corrupted_inode" |> to_string,
@@ -457,7 +463,8 @@ module Test_corrupted_inode = struct
     let cmd = Filename.quote_command "cp" [ "-R"; "-p"; root_archive; root ] in
     exec_cmd cmd
 
-  let test () =
+  let%test_lwt "test" =
+   fun () ->
     setup_test_env ();
     let module S = V1 () in
     let* rw = S.Repo.v (config ~fresh:false root) in
@@ -492,21 +499,3 @@ module Test_corrupted_inode = struct
     | Ok _ -> ());
     S.Repo.close rw
 end
-
-let tests =
-  [
-    Alcotest.test_case "Test migration V1 to V2" `Quick (fun () ->
-        Lwt_main.run (Test_store.v1_to_v2 ()));
-    Alcotest.test_case "Test index reconstuction" `Quick (fun () ->
-        Lwt_main.run (Test_reconstruct.test_reconstruct ()));
-    Alcotest.test_case "Test layered store migration V1 to V2" `Quick (fun () ->
-        Lwt_main.run (Test_layered_store.v1_to_v2 ()));
-    Alcotest.test_case "Test integrity check" `Quick (fun () ->
-        Lwt_main.run (Test_corrupted_stores.test ()));
-    Alcotest.test_case "Test integrity check on layered stores" `Quick
-      (fun () -> Lwt_main.run (Test_corrupted_stores.test_layered_store ()));
-    Alcotest.test_case "Test freeze lock on layered stores" `Quick (fun () ->
-        Lwt_main.run (Test_corrupted_stores.test_freeze_lock ()));
-    Alcotest.test_case "Test integrity check for inodes" `Quick (fun () ->
-        Lwt_main.run (Test_corrupted_inode.test ()));
-  ]

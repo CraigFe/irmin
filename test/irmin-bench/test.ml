@@ -14,4 +14,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-let () = Alcotest.run "irmin-bench" (Ema.test_cases @ Misc.test_cases)
+module%test Ema = Ema
+module%test Misc = Misc
+[%%run_tests]

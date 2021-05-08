@@ -59,7 +59,8 @@ let invalid_tree () =
   let hash = Store.Hash.hash (fun f -> f "") in
   Tree.shallow repo (`Node hash)
 
-let test_bindings _ () =
+let%test_lwt "bindings" =
+ fun _ ->
   let tree =
     Tree.of_concrete
       (`Tree [ ("aa", c "0"); ("ab", c "1"); ("a", c "2"); ("b", c "3") ])
@@ -71,7 +72,8 @@ let test_bindings _ () =
   (* [Tree.list] returns all keys in lexicographic order *)
   Tree.list tree [] >|= (List.map fst >> check_sorted)
 
-let test_paginated_bindings _ () =
+let%test_lwt "paginated bindings" =
+ fun _ ->
   let tree =
     Tree.of_concrete
       (`Tree
@@ -111,7 +113,8 @@ let test_paginated_bindings _ () =
 let tree bs = Tree.of_concrete (`Tree bs)
 
 (** Basic tests of the [Tree.diff] operation. *)
-let test_diff _ () =
+let%test_lwt "diff" =
+ fun _ ->
   let empty = tree [] in
   let single = tree [ ("k", c "v") ] in
 
@@ -137,7 +140,8 @@ let test_diff _ () =
         "Changed metadata"
         [ ([ "k" ], `Updated (("v", Left), ("v", Right))) ]
 
-let test_add _ () =
+let%test_lwt "add" =
+ fun _ ->
   let sample_tree ?(ab = "ab_v") ?ac () : Tree.concrete =
     let ac = match ac with Some ac -> [ ("ac", ac) ] | None -> [] in
     `Tree [ ("a", `Tree ([ ("aa", c "0"); ("ab", c ab) ] @ ac)); ("b", c "3") ]
@@ -182,7 +186,8 @@ let test_add _ () =
 
   Lwt.return_unit
 
-let test_remove _ () =
+let%test_lwt "remove" =
+ fun _ ->
   let tree =
     Tree.of_concrete
       (`Tree [ ("a", `Tree [ ("aa", c "0"); ("ab", c "1") ]); ("b", c "3") ])
@@ -235,7 +240,8 @@ let transform_once : type a b. a Type.t -> a -> b -> a -> b =
       if equal source x then target
       else Alcotest.failf "Expected %a but got %a" pp source pp x
 
-let test_update _ () =
+let%test_lwt "update" =
+ fun _ ->
   let unrelated_binding = ("a_unrelated", c "<>") in
   let abc ?info v =
     `Tree
@@ -391,7 +397,8 @@ let test_update _ () =
 (* Correct stats for a completely lazy tree *)
 let lazy_stats = Tree.{ nodes = 0; leafs = 0; skips = 1; depth = 0; width = 0 }
 
-let test_clear _ () =
+let%test_lwt "clear" =
+ fun _ ->
   let size = 830829 in
   let* large_tree =
     List.init size string_of_int
@@ -419,7 +426,8 @@ let clear_and_assert_lazy tree =
   >|= Alcotest.(gcheck Tree.stats_t)
         "Initially the tree is entirely lazy" lazy_stats
 
-let test_fold_force _ () =
+let%test_lwt "fold_force" =
+ fun _ ->
   let* invalid_tree =
     let+ repo = Store.Repo.v (Irmin_mem.config ()) in
     let hash = Store.Hash.hash (fun f -> f "") in
@@ -485,7 +493,8 @@ let test_fold_force _ () =
 
   Lwt.return_unit
 
-let test_shallow _ () =
+let%test_lwt "shallow" =
+ fun _ ->
   let* () =
     let compute_hash ~subtree =
       Tree.(add_tree empty) [ "key" ] subtree >|= Tree.hash
@@ -505,7 +514,8 @@ let test_shallow _ () =
 
   Lwt.return_unit
 
-let test_kind_empty_path _ () =
+let%test_lwt "kind_empty_path" =
+ fun _ ->
   let cont = c "c" |> Tree.of_concrete in
   let tree = `Tree [ ("k", c "c") ] |> Tree.of_concrete in
   let* k = Tree.kind cont [] in
@@ -527,7 +537,8 @@ let persist_tree : Store.tree -> Store.tree Lwt.t =
   let* () = Store.set_tree_exn ~info:Store.Info.none store [] tree in
   Store.tree store
 
-let test_generic_equality _ () =
+let%test_lwt "generic_equality" =
+ fun _ ->
   (* Regression test for a bug in which the equality derived from [tree_t] did
      not respect equivalences between in-memory trees and lazy trees. *)
   let* tree = persist_tree (tree [ ("k", c "v") ]) in
@@ -535,7 +546,8 @@ let test_generic_equality _ () =
   Alcotest.(gcheck Store.tree_t)
     "Modified empty tree is equal to [Tree.empty]" Tree.empty should_be_empty
 
-let test_is_empty _ () =
+let%test_lwt "is_empty" =
+ fun _ ->
   (* Test for equivalence against an [is_equal] derived from generic equality,
      for backwards compatibility. *)
   let is_empty =
@@ -566,7 +578,8 @@ let test_is_empty _ () =
   in
   Lwt.return_unit
 
-let test_of_concrete _ () =
+let%test_lwt "of_concrete" =
+ fun _ ->
   let* () =
     let aa = ("aa", c "aa-v") in
     let ac = ("ac", c "ac-v") in
@@ -584,20 +597,3 @@ let test_of_concrete _ () =
   in
 
   Lwt.return_unit
-
-let suite =
-  [
-    Alcotest_lwt.test_case "bindings" `Quick test_bindings;
-    Alcotest_lwt.test_case "paginated bindings" `Quick test_paginated_bindings;
-    Alcotest_lwt.test_case "diff" `Quick test_diff;
-    Alcotest_lwt.test_case "add" `Quick test_add;
-    Alcotest_lwt.test_case "remove" `Quick test_remove;
-    Alcotest_lwt.test_case "update" `Quick test_update;
-    Alcotest_lwt.test_case "clear" `Quick test_clear;
-    Alcotest_lwt.test_case "fold" `Quick test_fold_force;
-    Alcotest_lwt.test_case "shallow" `Quick test_shallow;
-    Alcotest_lwt.test_case "kind of empty path" `Quick test_kind_empty_path;
-    Alcotest_lwt.test_case "generic equality" `Quick test_generic_equality;
-    Alcotest_lwt.test_case "is_empty" `Quick test_is_empty;
-    Alcotest_lwt.test_case "of_concrete" `Quick test_of_concrete;
-  ]

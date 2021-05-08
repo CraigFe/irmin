@@ -144,8 +144,8 @@ let test_get_last_modified : test_case =
   ()
 
 let suite ~set_tree =
-  let test_case : string -> test_case -> unit Alcotest_lwt.test_case =
-   fun name f -> Alcotest_lwt.test_case name `Quick (fun _ () -> f ~set_tree ())
+  let test_case name f =
+    Alcotest_lwt.test_case name `Quick (fun _ () -> f ~set_tree ())
   in
   [
     ( "GRAPHQL",
