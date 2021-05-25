@@ -1414,59 +1414,66 @@ module Make (S : S) = struct
           S.Tree.add c [ "foo"; string_of_int i ] (string_of_int i) >>= fun c ->
           wide_node (i + 1) c
       in
-      wide_node 0 c0 >>= fun c ->
-      S.Tree.list c [ "foo" ] >>= fun ls ->
+      let* c = wide_node 0 c0 in
+      let* ls = S.Tree.list c [ "foo" ] in
       Alcotest.(check int) "list wide dir" size (List.length ls);
-      S.Tree.fold ~force:`True c ~uniq:`False
-        ~contents:(fun k _ i ->
-          Alcotest.(check int) "contents at [foo; i]" (List.length k) 2;
-          Lwt.return (i + 1))
-        ~node:(fun k _ i ->
-          if not (List.length k = 0 || List.length k = 1) then
-            Alcotest.failf "nodes should be at [] and [foo], got %a"
-              (Irmin.Type.pp S.key_t) k;
-          Lwt.return i)
-        0
-      >>= fun nb_contents ->
+      let* nb_contents =
+        S.Tree.fold ~force:`True c ~uniq:`False
+          ~contents:(fun k _ i ->
+            Alcotest.(check int) "contents at [foo; i]" (List.length k) 2;
+            Lwt.return (i + 1))
+          ~node:(fun k _ i ->
+            if not (List.length k = 0 || List.length k = 1) then
+              Alcotest.failf "nodes should be at [] and [foo], got %a"
+                (Irmin.Type.pp S.key_t) k;
+            Lwt.return i)
+          0
+      in
       Alcotest.(check int) "nb of contents folded over" size nb_contents;
-      S.Tree.remove c [ "foo"; "499999" ] >>= fun c1 ->
-      S.Tree.add c0 [] "499999" >>= fun c2 ->
-      S.Tree.add_tree c1 [ "foo"; "499999" ] c2 >>= fun c' ->
+      let* c1 = S.Tree.remove c [ "foo"; "499999" ] in
+      let* c2 = S.Tree.add c0 [] "499999" in
+      let* c' = S.Tree.add_tree c1 [ "foo"; "499999" ] c2 in
       let h' = S.Tree.hash c' in
       let h = S.Tree.hash c in
       check S.Hash.t "same tree" h h';
-      S.Tree.get_tree c [ "foo" ] >>= fun c1 ->
-      (match S.Tree.destruct c1 with
-      | `Contents _ -> Alcotest.fail "got `Contents, expected `Node"
-      | `Node node -> (
-          S.to_private_node node >>= function
-          | Ok v -> (
-              let ls = P.Node.Val.list v in
-              Alcotest.(check int) "list wide node" size (List.length ls);
-              let k = normal (P.Contents.Key.hash "bar") in
-              let v1 = P.Node.Val.add v "x" k in
-              let h' = H_node.hash v1 in
-              with_node repo (fun n -> P.Node.add n v1) >>= fun h ->
-              check H_node.t "wide node + x: hash(v) = add(v)" h h';
-              let v2 = P.Node.Val.add v "x" k in
-              check P.Node.Val.t "add x" v1 v2;
-              let v0 = P.Node.Val.remove v1 "x" in
-              check P.Node.Val.t "remove x" v v0;
-              let v3 = P.Node.Val.remove v "1" in
-              let h' = H_node.hash v3 in
-              with_node repo (fun n -> P.Node.add n v3) >|= fun h ->
-              check H_node.t "wide node - 1 : hash(v) = add(v)" h h';
-              (match P.Node.Val.find v "499999" with
-              | None -> Alcotest.fail "value 499999 not found"
-              | Some x ->
-                  let x' = normal (P.Contents.Key.hash "499999") in
-                  check P.Node.Val.value_t "find 499999" x x');
-              match P.Node.Val.find v "500000" with
-              | None -> ()
-              | Some _ -> Alcotest.fail "value 500000 should not be found")
-          | Error (`Dangling_hash _) ->
-              Alcotest.fail "unexpected dangling hash in wide node"))
-      >>= fun () -> P.Repo.close repo
+      let* c1 = S.Tree.get_tree c [ "foo" ] in
+      let* h'' =
+        S.Private.Repo.batch repo (fun x y _ -> S.save_tree repo x y c)
+      in
+      check S.Hash.t "same tree" h h'';
+      let* () =
+        match S.Tree.destruct c1 with
+        | `Contents _ -> Alcotest.fail "got `Contents, expected `Node"
+        | `Node node -> (
+            S.to_private_node node >>= function
+            | Ok v -> (
+                let ls = P.Node.Val.list v in
+                Alcotest.(check int) "list wide node" size (List.length ls);
+                let k = normal (P.Contents.Key.hash "bar") in
+                let v1 = P.Node.Val.add v "x" k in
+                let h' = H_node.hash v1 in
+                with_node repo (fun n -> P.Node.add n v1) >>= fun h ->
+                check H_node.t "wide node + x: hash(v) = add(v)" h h';
+                let v2 = P.Node.Val.add v "x" k in
+                check P.Node.Val.t "add x" v1 v2;
+                let v0 = P.Node.Val.remove v1 "x" in
+                check P.Node.Val.t "remove x" v v0;
+                let v3 = P.Node.Val.remove v "1" in
+                let h' = H_node.hash v3 in
+                with_node repo (fun n -> P.Node.add n v3) >|= fun h ->
+                check H_node.t "wide node - 1 : hash(v) = add(v)" h h';
+                (match P.Node.Val.find v "499999" with
+                | None -> Alcotest.fail "value 499999 not found"
+                | Some x ->
+                    let x' = normal (P.Contents.Key.hash "499999") in
+                    check P.Node.Val.value_t "find 499999" x x');
+                match P.Node.Val.find v "500000" with
+                | None -> ()
+                | Some _ -> Alcotest.fail "value 500000 should not be found")
+            | Error (`Dangling_hash _) ->
+                Alcotest.fail "unexpected dangling hash in wide node")
+      in
+      S.Repo.close repo
     in
     run x test
 
