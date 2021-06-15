@@ -31,18 +31,17 @@ end
 module Make_ext
     (CA : Irmin.CONTENT_ADDRESSABLE_STORE_MAKER)
     (AW : Irmin.ATOMIC_WRITE_STORE_MAKER)
+    (N : Irmin.Private.Node.Maker)
+    (CT : Irmin.Private.Commit.Maker)
     (M : Irmin.Metadata.S)
     (C : Irmin.Contents.S)
     (P : Irmin.Path.S)
     (B : Irmin.Branch.S)
-    (H : Irmin.Hash.S)
-    (N : Irmin.Private.Node.S
-           with type metadata = M.t
-            and type hash = H.t
-            and type step = P.step)
-    (CT : Irmin.Private.Commit.S with type hash = H.t) =
+    (H : Irmin.Hash.S) =
 struct
-  include Irmin.Make_ext (CA) (AW) (M) (C) (P) (B) (H) (N) (CT)
+  module XNode = N (H) (P) (M)
+  module XCommit = CT (H)
+  include Irmin.Make_ext (CA) (AW) (M) (C) (P) (B) (H) (XNode) (XCommit)
 
   let freeze ?min_lower:_ ?max_lower:_ ?min_upper:_ ?max_upper:_ ?recovery:_
       _repo =
@@ -86,9 +85,12 @@ module Make
     (B : Irmin.Branch.S)
     (H : Irmin.Hash.S) =
 struct
-  module N = Irmin.Private.Node.Make (H) (P) (M)
-  module CT = Irmin.Private.Commit.Make (H)
-  include Make_ext (CA) (AW) (M) (C) (P) (B) (H) (N) (CT)
+  include
+    Make_ext (CA) (AW) (Irmin.Private.Node.Make) (Irmin.Private.Commit.Make) (M)
+      (C)
+      (P)
+      (B)
+      (H)
 end
 
 module Stats = Stats

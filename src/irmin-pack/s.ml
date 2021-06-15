@@ -98,3 +98,4 @@ module type Maker = functor
      and type step = Path.step
      and type metadata = Metadata.t
      and type Key.step = Path.step
+     and type Private.Sync.endpoint = unit
