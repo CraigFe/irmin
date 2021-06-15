@@ -25,17 +25,6 @@ module Atomic_write (K : Irmin.Type.S) (V : Irmin.Hash.S) = struct
   let clear_keep_generation _ = Lwt.return_unit
 end
 
-module CA_mem
-    (Hash : Irmin.Hash.S)
-    (Value : Irmin_pack.Pack_value.S with type hash := Hash.t) =
-struct
-  module Pack = Content_addressable.Maker (Hash)
-  module CA_mem = Pack.Make (Value)
-  module Key = Hash
-  module Val = Value
-  include Irmin_pack.Content_addressable.Closeable (CA_mem)
-end
-
 module Maker
     (Node : Irmin.Private.Node.Maker)
     (Commit : Irmin.Private.Commit.Maker)
@@ -59,7 +48,10 @@ struct
       module CA = struct
         module Key = H
         module Val = C
-        include Pack.Make (Pack_value)
+        module CA = Pack.Make (Pack_value)
+        include Irmin_pack.Content_addressable.Closeable (CA)
+
+        let v x = CA.v x >|= make_closeable
       end
 
       include Irmin.Contents.Store (CA)
@@ -86,7 +78,10 @@ struct
       module CA = struct
         module Key = H
         module Val = Commit
-        include Pack.Make (Pack_value)
+        module CA = Pack.Make (Pack_value)
+        include Irmin_pack.Content_addressable.Closeable (CA)
+
+        let v x = CA.v x >|= make_closeable
       end
 
       include Irmin.Private.Commit.Store (Node) (CA)
