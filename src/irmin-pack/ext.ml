@@ -20,8 +20,8 @@ module IO = IO.Unix
 module Maker
     (V : Version.S)
     (Config : Conf.S)
-    (Node : Irmin.Private.Node.Maker)
-    (Commit : Irmin.Private.Commit.Maker) =
+    (Node : Irmin.Private.Node.STORE)
+    (Commit : Irmin.Private.Commit.STORE) =
 struct
   type endpoint = unit
   type info = Commit.Info.t
