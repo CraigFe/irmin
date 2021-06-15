@@ -1,11 +1,151 @@
-## 2.6.1 (2021-04-29)
+## Unreleased
 
-This release contains 2.6.0 plus the changes described in 2.5.4.
+### Fixed
+
+- **irmin**
+  - Fixed fold for non-persisted, cleared trees (#1442, @samoht, @Ngoguey42)
+
+- **irmin-layers**
+  - Do not fail on double-close errors for private nodes (#1421, @samoht)
+
+- **irmin-pack**
+  - Do not clear and bump the generation for empty files (#1420, @samoht)
+
+### Added
+
+- **irmin**
+   - Added `Store.Tree.length`. (#1316, @Ngoguey42)
+  - Added `Read_only.S` and `Read_only.Maker` module types (#1343, @samoht)
+  - Append-only and content-addressable backend implementations have to
+    provide `close` and `batch` functions (#1345, @samoht)
+  - Atomic-write backend implementations have to provide a `close` function
+    (#1345, @samoht)
+
+- **irmin-bench**
+  - Benchmarks for tree operations now support layered stores
+    (#1293, @Ngoguey42)
+  - New features in benchmarks for tree operations (TODO: A pretty description
+    just before release) (#1314, #1326, #1357, #1358, #1367, #1384, #1403,
+    #1404, #1416, #1429, #1430, #1438 @Ngoguey42)
+  - Check hash of commit in benchmarks for trees (#1328, @icristescu)
+
+- **irmin-pack**
+  - Added `Irmin_pack.Version.{V1,V2}` modules for convenience. (#TODO,
+    @CraigFe)
+
+- **irmin-graphql**
+  - Added `last_modified` field to GraphQL interface (#1393, @kluvin)
+
+- **irmin-mem**
+  - Added `Irmin_mem.Content_addressable` (#1369, @samoht)
+
+- **irmin-unix**
+  - Update `irmin` CLI to raise an exception when an invalid/non-existent
+    config file is specified (#1413, @zshipko)
+
+- **irmin-pack**
+  - Added a `irmin-pack.mem` package (#1436, @icristescu, @craigfe)
+
+### Changed
+
+- **irmin**
+  - `Irmin.Sync` is now a namespace: use `Irmin.Sync.Make(S)` instead of
+    `Irmin.Sync(S)` (#1338, @samoht)
+  - `Store.Private.Sync` is now `Store.Private.Remote` (#1338, @samoht)
+  - All module types are now using snake-case and are not capitalized anymore.
+    (#1341, @samoht)
+  - Move signatures for backend stores into their own modules. All the
+    `X_STORE` sigs have moved to `X.S`:
+      - `APPEND_ONLY_STORE` is now `Append_only.S`
+      - `CONTENT_ADDRESSABLE_STORE` is now `Content_addressable.S`
+      - `ATOMIC_WRITE_STORE` is now `Irmin.Atomic_write.S`
+    And all the `X_STORE_MAKER` have moved to `X.Maker`:
+      - `APPEND_ONLY_STORE_MAKER` is now `Append_only.Maker`
+      - `CONTENT_ADDRESSABLE_STORE_MAKER` is now `Content_addressable.Maker`
+      - `ATOMIC_WRITE_STORE_MAKER` is now `Atomic_write.Maker`
+    This gives some space to move convenient functors closer to where they
+    belong:
+      - `Content_addressable` is now `Content_addressable.Make`
+      - New `Content_adddressable.Check_closed` and `Atomic_write.Check_closed`
+    (#1342, @samoht)
+  - Rename `Irmin.Make` into `Irmin.Maker` ; stage its result to return
+    `Make` functor once provided with a content-addressable and an
+    atomic-writes stores (#1369, @samoht)
+  - Rename `Irmin.Make_ext` into `Irmin.Maker_ext` ; stage its result to
+    return  `Make` functor once provided with a content-addressable and an
+    atomic-writes stores, as well as node and commit makers (#1369, @samoht)
+  - Require at least `lwt.5.3.0` to use `Lwt.Syntax` in the codebase
+    (#1401, @samoht)
+  - `Info` implementations are not part of store: use `S.Info.v`
+    instead of `Irmin.Info.v` (#1400, @samoht)
+  - Rename `Commit.V1` to `Commit.V1.Make` (#1431, @CraigFe)
+
+- **irmin-containers**
+  - Removed `Irmin_containers.Store_maker`; this is now equivalent to
+    `Irmin.Content_addressable.S` (#1369, @samoht)
+  - Renamed `Irmin_containers.CAS_maker` to
+    `Irmin_containers.Content_addressable` (#1369, @samoht)
+
+- **irmin-fs**
+  - Renamed `Irmin_fs.Make` into `Irmin_fs.Maker` (#1369, @samoht)
+  - Renamed `Irmin_fs.Make_ext` into `Irmin_fs.Maker_ext` (#1369, @samoht)
+
+- **irmin-git**
+  - All of the configuration keys have moved into their own namespace:
+    - `Irmin_git.root` is now `Irmin_git.Conf.root`
+    - `Irmin_git.head` is now `Irmin_git.Conf.head`
+    - `Irmin_git.bare` is now `Irmin_git.Conf.bare`
+    - `Irmin_git.level` is now `Irmin_git.Conf.level`
+    - `Irmin_git.buffers` is now `Irmin_git.Conf.buffers`
+    - `Irmin_git.dot_git` is now `Irmin_git.Conf.dot_git`
+   (#1347, @samoht)
+  - Renamed `Irmin_git.Make` into `Irmin_git.Maker` (#1369, @samoht)
+
+- **irmin-mirage**
+  - Renamed `Irmin_mirage_git.Make` into `Irmin_mirage_git.Maker`
+    (#1369, @samoht)
+
+- **irmin-layers**
+  - Remove `copy_in_upper` from the repo configuration. The default is now to
+    copy. (#1322, @Ngoguey42)
+  - Simplify the API of `freeze`. It is now possible to specify two distinct
+    commit closures for the copy to lower and the copy to next upper.
+    (#1322, @Ngoguey42)
+  - Renamed `Irmin_layered_pack.Make` and Irmin_layers.Make` into
+    `Irmin_layered_pack.Maker` and `Irmin_layers.Maker` (#1369, @samoht)
+  - Renamed `Irmin_layered_pack.Make_ext` and and Irmin_layers.Make_ext` into
+    into `Irmin_layered_pack.Maker_ext` and `Irmin_layers.Maker_ext`
+    (#1369, @samoht)
+  - Renamed `Irmin_layered_pack.Config` into `Irmin_layered_pack.Conf`
+    (#1370, @samoht)
+  - Readonly instances can check for an ongoing freeze (#1382, @icristescu,
+    @Ngoguey42)
+
+- **irmin-pack**
+  - It is no longer possible to modify an `inode` that doesn't point to the root
+    of a directory. (#1292, @Ngoguey42)
+  - When configuring a store, is it no longer possible to set `entries` to a
+    value larger than `stable_hash`. (#1292, @Ngoguey42)
+  - Added number of objects to the output of `stat-pack` command in
+    `irmin-fsck`. (#1311, @icristescu)
+  - Renamed the `Version` module type into `Version.S` and `io_version` into
+    `version`. The `Pack.File` and `Atomic_write` functors now take
+    `Version` as their first parameter (#1352, @samoht)
+  - Renamed `Irmin_pack.Make` into `Irmin_pack.V1` (#1369, @samoht)
+  - Renamed `Irmin_pack.Make_ext` into `Irmin_pack.Maker_ext` (#1369, @samoht)
+  - Renamed `Irmin_pack.Config` into `Irmin_pack.Conf` (#1370, @samoht)
+  - Renamed `Irmin_pack.Pack` into `Irmin_pack.Content_addressable` and
+    `Irmin_pack.Pack.File` into `Irmin_pack.Content_addressable.Maker`
+    (#1377, @samoht)
+  - Moved `Irmin_pack.Store.Atomic_write` into its own module (#1378, @samoht)
+  - All the types in `inode.ml` are now derived automatically (#1451, @samoht, @mattiasdrp)
+  - `Checks.Reconstruct_index.run` now takes an optional `index_log_size`
+    parameter for customising the interval between merges during
+    reconstruction. (#1459, @CraigFe)
 
 ## 2.6.0 (2021-04-13)
 
-** Note: this release is based on 2.5.3, and does not contain 2.5.4. Use 2.6.1
-for access to those changes. **
+** Note: this release is based on 2.5.3, and does not contain 2.5.4. **
 
 ### Fixed
 
@@ -25,7 +165,7 @@ for access to those changes. **
 - **irmin-git**
   - Upgrade `irmin-git` with `git.3.4.0`. (#1392, @dinosaure)
 
-## 2.5.4 (2021-04-29)
+## 2.5.4 (2021-04-28)
 
 ### Fixed
 
@@ -57,7 +197,7 @@ for access to those changes. **
 ### Added
 
 - **irmin**
-  - Add `Store.Tree.is_empty`. (#1373, @CraigFe)
+  - Added `Store.Tree.is_empty`. (#1373, @CraigFe)
 
 ## 2.5.2 (2021-04-08)
 
@@ -69,7 +209,7 @@ for access to those changes. **
     directory.  (#1335, @craigfe)
 
 - **irmin-pack**
-  - Fix a performance regression where all caches where always cleaned by
+  - Fixed a performance regression where all caches were always cleaned by
     `Store.sync` when using the V1 format (#1360, @samoht)
 
 ## 2.5.1 (2021-02-19)
