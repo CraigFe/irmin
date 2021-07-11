@@ -99,13 +99,12 @@ module type Maker = functor
      type step [@@deriving irmin]
    end)
   (M : Metadata.S)
-  -> 
-    S
-      with  type metadata = M.t
-       and type contents = C.t
-       and type node = t N.t
-       and type step = P.step
-end
+  ->
+  S
+    with type metadata = M.t
+     and type contents = C.t
+     and type node = t N.t
+     and type step = P.step
 
 module type Store = sig
   include Content_addressable.S
